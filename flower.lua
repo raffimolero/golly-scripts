@@ -2,28 +2,23 @@ local g = golly()
 local gp = require "gplus"
 
 -- Controls:
--- [Click+Drag] to start typing a construction tape.
+-- [Click+Drag] to start typing a construction recipe.
 -- Then, type in different numbers for different length signals.
 -- You may also press [Space] to space out the signals.
 -- If you make a mistake, press [q] to delete the last thing you typed.
 -- [Shift+Q] will finish the script and remove the selection box.
 
----------------------------------------
+-----------------------------------------
 
 g.show("Running program.")
 g.setrule("Flow6")
 
----------------------------------------
--- helpers
+-----------------------------------------
+-- framework
 
 local function mouse_pos()
 	local x, y = gp.split(g.getxy())
 	return tonumber(x) or 0, tonumber(y) or 0
-end
-
--- https://www.reddit.com/r/lua/comments/e11dsl/
-local function sign(number)
-    return number > 0 and 1 or (number == 0 and 0 or -1)
 end
 
 local function modifiers(str)
@@ -33,9 +28,6 @@ local function modifiers(str)
 		shift = str:find("shift") ~= nil,
 	}
 end
-
----------------------------------------
--- framework
 
 local function handle_event(handler)
 	local event = g.getevent()
@@ -61,8 +53,55 @@ local function handle_event(handler)
 	end
 end
 
----------------------------------------
+-----------------------------------------
+-- History with cells
+
+local History = {}
+
+function History:push()
+    local bounds = g.getrect()
+    table.insert(self, {
+        bounds = bounds,
+        cells = g.getcells(bounds),
+        gen = g.getgen(),
+    })
+end
+
+function History:pop()
+    local frame = table.remove(self)
+
+    local bounds = frame.bounds
+    local cells = frame.cells
+    local gen = frame.gen
+
+    local x, y = bounds[1], bounds[2]
+    local w, h = bounds[3], bounds[4]
+
+    -- clear all cells, maybe there's a better way
+    g.select(g.getrect())
+    g.clear(0)
+    g.select({})
+
+    -- paste all cells
+    g.putcells(cells, 0, 0, 1, 0, 0, 1, "copy")
+
+    g.setgen(gen)
+    
+    g.update()
+end
+
+function History:reset()
+	History = {}
+	self.push()
+end
+
+-----------------------------------------
 -- compass stuff
+
+-- https://www.reddit.com/r/lua/comments/e11dsl/
+local function sign(number)
+    return number > 0 and 1 or (number == 0 and 0 or -1)
+end
 
 local function snap_to_direction(x, y)
 	if math.abs(y) > math.abs(x) then
@@ -76,11 +115,22 @@ local function get_direction(ax, ay, bx, by)
 	return snap_to_direction(bx-ax, by-ay)
 end
 
----------------------------------------
+-----------------------------------------
 -- program start
 
 local ax, ay = nil, nil
 local dx, dy = nil, nil
+local length = 0
+local recipe = nil
+
+local function reset()
+	History:reset()
+	ax, ay = nil, nil
+	dx, dy = nil, nil
+	length = 0
+	recipe = nil
+end
+
 local mdown = false
 local FINISHED = false
 
@@ -88,7 +138,7 @@ g.show("Running program.")
 g.update()
 g.setcursor("Select")
 
----------------------------------------
+-----------------------------------------
 -- functions
 
 local function cursor_is_ready()
@@ -103,11 +153,13 @@ local function place(cell)
 	g.setcell(ax, ay, cell)
 	ax = ax + dx
 	ay = ay + dy
+	length = length + 1
 end
 
 local function backspace()
 	ax = ax - dx
 	ay = ay - dy
+	length = length - 1
 	g.setcell(ax, ay, 0)
 end
 
@@ -146,12 +198,13 @@ local function show_cursor(span)
 	}
 end
 
----------------------------------------
+-----------------------------------------
 -- event handling
 
 local handler = {
 	click = function(x, y, btn, mods)
 		mdown = true
+		reset()
 		ax, ay = x, y
 	end,
 	mup = function(btn)
@@ -187,16 +240,16 @@ local handler = {
 	end,
 }
 
-repeat
-	handle_event(handler)
-	if mdown then
-		dx, dy = get_direction(ax, ay, mouse_pos())
-		show_compass(3)
-	end
-	g.update()
-until FINISHED
+-- repeat
+-- 	handle_event(handler)
+-- 	if mdown then
+-- 		dx, dy = get_direction(ax, ay, mouse_pos())
+-- 		show_compass(3)
+-- 	end
+-- 	g.update()
+-- until FINISHED
 
----------------------------------------
+-----------------------------------------
 -- end program
 
 g.select({})
