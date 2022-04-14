@@ -58,6 +58,15 @@ end
 
 local History = {}
 
+-- maybe there's a better way
+local function clear_grid()
+	local bounds = g.getrect()
+	if #bounds == 0 then return end
+	g.select(bounds)
+    g.clear(0)
+    g.select({})
+end
+
 function History:push()
     local bounds = g.getrect()
     table.insert(self, {
@@ -69,6 +78,7 @@ end
 
 function History:pop()
     local frame = table.remove(self)
+	if not frame then return end
 
     local bounds = frame.bounds
     local cells = frame.cells
@@ -77,22 +87,18 @@ function History:pop()
     local x, y = bounds[1], bounds[2]
     local w, h = bounds[3], bounds[4]
 
-    -- clear all cells, maybe there's a better way
-    g.select(g.getrect())
-    g.clear(0)
-    g.select({})
-
-    -- paste all cells
-    g.putcells(cells, 0, 0, 1, 0, 0, 1, "copy")
-
+	clear_grid()
+    g.putcells(cells)
     g.setgen(gen)
     
     g.update()
 end
 
 function History:reset()
-	History = {}
-	self.push()
+	for i = 1, #self do
+		self[i] = nil
+	end
+	self:push()
 end
 
 -----------------------------------------
@@ -122,6 +128,7 @@ local ax, ay = nil, nil
 local dx, dy = nil, nil
 local length = 0
 local recipe = nil
+local running = false
 
 local function reset()
 	History:reset()
@@ -240,14 +247,18 @@ local handler = {
 	end,
 }
 
--- repeat
--- 	handle_event(handler)
--- 	if mdown then
--- 		dx, dy = get_direction(ax, ay, mouse_pos())
--- 		show_compass(3)
--- 	end
--- 	g.update()
--- until FINISHED
+local function tick()
+	if mdown then
+		dx, dy = get_direction(ax, ay, mouse_pos())
+		show_compass(3)
+	end
+end
+
+repeat
+	handle_event(handler)
+	tick()
+	g.update()
+until FINISHED
 
 -----------------------------------------
 -- end program
