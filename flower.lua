@@ -2,11 +2,12 @@ local g = golly()
 local gp = require "gplus"
 
 -- Controls:
--- [Click+Drag] to start typing a construction recipe.
--- Then, type in different numbers for different length signals.
+-- <Click+Drag> to start drawing a construction arm.
+-- <Release> to begin typing the tape.
+-- <Type> in different numbers for different length signals.
 -- You may also press [Space] to space out the signals.
--- If you make a mistake, press [q] to delete the last thing you typed.
--- [Shift+Q] will finish the script and remove the selection box.
+-- If you make a mistake, press [Delete], [Backspace], or [`] (backtick) to delete the last thing you typed.
+-- [Shift+S] will stop the script and remove the selection box.
 
 -----------------------------------------
 
@@ -16,9 +17,15 @@ g.setrule("Flow6")
 -----------------------------------------
 -- framework
 
+local MDOWN = false
+local FINISHED = false
+
 local function mouse_pos()
 	local x, y = gp.split(g.getxy())
-	return tonumber(x) or 0, tonumber(y) or 0
+	return {
+		x = tonumber(x) or 0,
+		y = tonumber(y) or 0,
+	}
 end
 
 local function modifiers(str)
@@ -32,7 +39,7 @@ end
 local function handle_event(handler)
 	local event = g.getevent()
 	if event == "" then return end
-	type, a, b, c, d = gp.split(event)
+	local type, a, b, c, d = gp.split(event)
 
 	local func = handler[type]
 
@@ -57,6 +64,13 @@ end
 -- History with cells
 
 local History = {}
+
+function History:reset()
+	for i = 1, #self do
+		self[i] = nil
+	end
+	self:push()
+end
 
 -- maybe there's a better way
 local function clear_grid()
@@ -94,13 +108,6 @@ function History:pop()
     g.update()
 end
 
-function History:reset()
-	for i = 1, #self do
-		self[i] = nil
-	end
-	self:push()
-end
-
 -----------------------------------------
 -- compass stuff
 
@@ -109,37 +116,129 @@ local function sign(number)
     return number > 0 and 1 or (number == 0 and 0 or -1)
 end
 
-local function snap_to_direction(x, y)
-	if math.abs(y) > math.abs(x) then
-		return 0, sign(y)
-	else
-		return sign(x), 0
-	end
+-- local function snap_to_direction(x, y)
+-- 	if math.abs(y) > math.abs(x) then
+-- 		return 0, sign(y)
+-- 	else
+-- 		return sign(x), 0
+-- 	end
+-- end
+
+-- local function get_direction(a, b)
+-- 	return snap_to_direction(b.x-a.x, b.y-a.y)
+-- end
+
+-----------------------------------------
+-- Cursor
+
+local Cursor = {}
+
+function Cursor:reset()
+	self.pos = nil
+	self.delta = nil
 end
 
-local function get_direction(ax, ay, bx, by)
-	return snap_to_direction(bx-ax, by-ay)
+function Cursor:show(span)
+	if not self.pos then
+		g.select({})
+		return
+	end
+
+	span = span - 1
+	local offx = 0
+	local offy = 0
+
+	if self.delta then
+		offx = math.abs(self.delta.y) * span
+		offy = math.abs(self.delta.x) * span
+	end
+
+	g.select {
+		self.pos.x - offx,
+		self.pos.y - offy,
+		offx * 2 + 1,
+		offy * 2 + 1,
+	}
+end
+
+function Cursor:move()
+	if not self.delta then return end
+	self.pos = {
+		x = self.pos.x + self.delta.x,
+		y = self.pos.y + self.delta.y,
+	}
+end
+
+function Cursor:move_by(delta)
+	if not self.pos then return end
+	self.delta = delta
+	self:move()
+end
+
+function Cursor:place(cell)
+	g.setcell(self.pos.x, self.pos.y, cell)
+end
+
+function Cursor:push(cell)
+	self:move()
+	self:place(cell)
+end
+
+function Cursor:pop()
+	self:place(0)
+	self.pos = {
+		x = self.pos.x - self.delta.x,
+		y = self.pos.y - self.delta.y,
+	}
+end
+
+function Cursor:is_ready()
+	return not MDOWN and self.delta
 end
 
 -----------------------------------------
--- program start
+-- Recipe
 
-local ax, ay = nil, nil
-local dx, dy = nil, nil
-local length = 0
-local recipe = nil
-local running = false
+local Recipe = { length = 0 }
 
-local function reset()
-	History:reset()
-	ax, ay = nil, nil
-	dx, dy = nil, nil
-	length = 0
-	recipe = nil
+function Recipe:reset()
+	Cursor:reset()
+	for i in ipairs(self) do
+		self[i] = nil
+	end
+	self.length = 0
 end
 
-local mdown = false
-local FINISHED = false
+function Recipe:push(cell)
+	-- if not Cursor.pos then return end
+	Cursor:push(cell)
+	self.length = self.length + 1
+end
+
+function Recipe:insert(len)
+	table.insert(self, len)
+	for i=1, len do self:push(5) end
+	if len ~= 0 then self:push(2) end
+	self:push(1)
+end
+
+function Recipe:remove()
+	local len = table.remove(self)
+	if not len then return end
+	for i=0, len do Cursor:pop() end
+	if len ~= 0 then Cursor:pop() end
+end
+
+function Recipe:show()
+	local out = ""
+	for _,v in ipairs(self) do
+		out = out..v
+	end
+	g.show(out)
+end
+
+-----------------------------------------
+-- Start
 
 g.show("Running program.")
 g.update()
@@ -148,112 +247,66 @@ g.setcursor("Select")
 -----------------------------------------
 -- functions
 
-local function cursor_is_ready()
-	return
-		not mdown
-		and ax and ay
-		and dx and dy
-		and (dx ~= 0 or dy ~= 0)
-end
-
-local function place(cell)
-	g.setcell(ax, ay, cell)
-	ax = ax + dx
-	ay = ay + dy
-	length = length + 1
-end
-
-local function backspace()
-	ax = ax - dx
-	ay = ay - dy
-	length = length - 1
-	g.setcell(ax, ay, 0)
-end
-
-local function delete()
-	local prev_cell = g.getcell(ax-dx, ay-dy)
-	if prev_cell == 0 then return end
-	repeat
-		backspace()
-		prev_cell = g.getcell(ax-dx, ay-dy)
-	until prev_cell == 1 or prev_cell == 0
-end
-
-local function show_compass(length)
-	length = length - 1
-	local offx = dx < 0 and -length or 0
-	local offy = dy < 0 and -length or 0
-	local w = math.abs(dx) * length
-	local h = math.abs(dy) * length
-	g.select {
-		ax + offx,
-		ay + offy,
-		w + 1,
-		h + 1,
-	}
-end
-
-local function show_cursor(span)
-	span = span - 1
-	local offx = math.abs(dy) * -span
-	local offy = math.abs(dx) * -span
-	g.select {
-		ax + offx,
-		ay + offy,
-		-offx * 2 + 1,
-		-offy * 2 + 1,
-	}
-end
+-- none
 
 -----------------------------------------
 -- event handling
 
 local handler = {
 	click = function(x, y, btn, mods)
-		mdown = true
-		reset()
-		ax, ay = x, y
+		MDOWN = true
+		g.setcursor("Draw")
+		Recipe:reset()
+		Cursor.pos = mouse_pos()
+		Recipe:push(1)
 	end,
 	mup = function(btn)
-		mdown = false
+		MDOWN = false
+		g.setcursor("Select")
 	end,
 	key = function(key, mods)
-		if key == "q" and mods.shift then
+		if key == "s" and mods.shift then
 			FINISHED = true
 			return
 		end
 
-		local function is_not_ready()
-			if not cursor_is_ready() then
-				g.note("Please set a proper direction for the tape.")
-				return true
-			end
-			return false
+		if gp.validint(key) then
+			if not Cursor:is_ready() then return end
+			local len = tonumber(key)
+			Recipe:insert(len)
+		elseif key == "space" then
+			if not Cursor:is_ready() then return end
+			Recipe:insert(0)
+		elseif key == "r" then
+			if not Cursor:is_ready() then return end
+		elseif key == "delete" or key == "`" then
+			if not Cursor:is_ready() then return end
+			Recipe:remove()
 		end
 
-		if gp.validint(key) then
-			if is_not_ready() then return end
-			for i = 1, tonumber(key) do place(5) end
-			place(2)
-			place(1)
-		elseif key == "delete" or key == "q" then
-			if is_not_ready() then return end
-			delete()
-		elseif key == "space" then
-			if is_not_ready() then return end
-			place(1)
-		end
-		show_cursor(2)
+		Recipe:show()
+		Cursor:show(2)
 	end,
 }
 
 local function tick()
-	if mdown then
-		dx, dy = get_direction(ax, ay, mouse_pos())
-		show_compass(3)
+	if MDOWN then
+		local pos = mouse_pos()
+		local delta = {
+			x = sign(pos.x - Cursor.pos.x),
+			y = sign(pos.y - Cursor.pos.y),
+		}
+		while Cursor.pos.x ~= pos.x do
+			Cursor.delta = { x=delta.x, y=0 }
+			Recipe:push(1)
+		end
+		while Cursor.pos.y ~= pos.y do
+			Cursor.delta = { x=0, y=delta.y }
+			Recipe:push(1)
+		end
+		Cursor:show(2)
 	end
 end
-
 repeat
 	handle_event(handler)
 	tick()
