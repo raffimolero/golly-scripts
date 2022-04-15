@@ -6,7 +6,7 @@ local gp = require "gplus"
 -- <Release> to begin typing the tape.
 -- <Type> in different numbers for different length signals.
 -- You may also press [Space] to space out the signals.
--- If you make a mistake, press [Delete], [Backspace], or [`] (backtick) to delete the last thing you typed.
+-- If you make a mistake, press [Delete], [Backspace], or [Tab] to undo the last signal input.
 -- [Shift+S] will stop the script and remove the selection box.
 
 -----------------------------------------
@@ -186,6 +186,7 @@ end
 
 function Cursor:pop()
 	self:place(0)
+	if not self.delta then return end
 	self.pos = {
 		x = self.pos.x - self.delta.x,
 		y = self.pos.y - self.delta.y,
@@ -209,26 +210,6 @@ function Recipe:reset()
 	self.length = 0
 end
 
-function Recipe:push(cell)
-	-- if not Cursor.pos then return end
-	Cursor:push(cell)
-	self.length = self.length + 1
-end
-
-function Recipe:insert(len)
-	table.insert(self, len)
-	for i=1, len do self:push(5) end
-	if len ~= 0 then self:push(2) end
-	self:push(1)
-end
-
-function Recipe:remove()
-	local len = table.remove(self)
-	if not len then return end
-	for i=0, len do Cursor:pop() end
-	if len ~= 0 then Cursor:pop() end
-end
-
 function Recipe:show()
 	local out = ""
 	for _,v in ipairs(self) do
@@ -237,17 +218,40 @@ function Recipe:show()
 	g.show(out)
 end
 
+function Recipe:finish()
+	g.reset()
+	
+end
+
+function Recipe:push(cell)
+	-- if not Cursor.pos then return end
+	Cursor:push(cell)
+	self.length = self.length + 1
+end
+
+function Recipe:insert(len)
+	History:push()
+	table.insert(self, len)
+	for i=1, len do self:push(5) end
+	if len ~= 0 then self:push(2) end
+	self:push(1)
+	g.run(self.length + 10)
+end
+
+function Recipe:remove()
+	local len = table.remove(self)
+	if not len then return end
+	for i=0, len do Cursor:pop() end
+	if len ~= 0 then Cursor:pop() end
+	History:pop()
+end
+
 -----------------------------------------
 -- Start
 
 g.show("Running program.")
 g.update()
 g.setcursor("Select")
-
------------------------------------------
--- functions
-
--- none
 
 -----------------------------------------
 -- event handling
@@ -271,16 +275,11 @@ local handler = {
 		end
 
 		if gp.validint(key) then
-			if not Cursor:is_ready() then return end
 			local len = tonumber(key)
 			Recipe:insert(len)
 		elseif key == "space" then
-			if not Cursor:is_ready() then return end
 			Recipe:insert(0)
-		elseif key == "r" then
-			if not Cursor:is_ready() then return end
-		elseif key == "delete" or key == "`" then
-			if not Cursor:is_ready() then return end
+		elseif key == "delete" or key == "tab" then
 			Recipe:remove()
 		end
 
@@ -313,8 +312,4 @@ repeat
 	g.update()
 until FINISHED
 
------------------------------------------
--- end program
-
-g.select({})
-g.show("Done.")
+Recipe:finish()
