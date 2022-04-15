@@ -23,8 +23,8 @@ local FINISHED = false
 local function mouse_pos()
 	local x, y = gp.split(g.getxy())
 	return {
-		x = tonumber(x) or 0,
-		y = tonumber(y) or 0,
+		x = tonumber(x),
+		y = tonumber(y),
 	}
 end
 
@@ -82,10 +82,8 @@ local function clear_grid()
 end
 
 function History:push()
-    local bounds = g.getrect()
     table.insert(self, {
-        bounds = bounds,
-        cells = g.getcells(bounds),
+        cells = g.getcells(g.getrect()),
         gen = g.getgen(),
     })
 end
@@ -94,12 +92,8 @@ function History:pop()
     local frame = table.remove(self)
 	if not frame then return end
 
-    local bounds = frame.bounds
     local cells = frame.cells
     local gen = frame.gen
-
-    local x, y = bounds[1], bounds[2]
-    local w, h = bounds[3], bounds[4]
 
 	clear_grid()
     g.putcells(cells)
@@ -135,7 +129,7 @@ local Cursor = {}
 
 function Cursor:reset()
 	self.pos = nil
-	self.delta = nil
+	self.dir = nil
 end
 
 function Cursor:show(span)
@@ -148,9 +142,9 @@ function Cursor:show(span)
 	local offx = 0
 	local offy = 0
 
-	if self.delta then
-		offx = math.abs(self.delta.y) * span
-		offy = math.abs(self.delta.x) * span
+	if self.dir then
+		offx = math.abs(self.dir.y) * span
+		offy = math.abs(self.dir.x) * span
 	end
 
 	g.select {
@@ -162,16 +156,15 @@ function Cursor:show(span)
 end
 
 function Cursor:move()
-	if not self.delta then return end
+	if not self.pos or not self.dir then return end
 	self.pos = {
-		x = self.pos.x + self.delta.x,
-		y = self.pos.y + self.delta.y,
+		x = self.pos.x + self.dir.x,
+		y = self.pos.y + self.dir.y,
 	}
 end
 
-function Cursor:move_by(delta)
-	if not self.pos then return end
-	self.delta = delta
+function Cursor:move_by(direction)
+	self.dir = direction
 	self:move()
 end
 
@@ -186,21 +179,25 @@ end
 
 function Cursor:pop()
 	self:place(0)
-	if not self.delta then return end
+	if not self.dir then return end
 	self.pos = {
-		x = self.pos.x - self.delta.x,
-		y = self.pos.y - self.delta.y,
+		x = self.pos.x - self.dir.x,
+		y = self.pos.y - self.dir.y,
 	}
 end
 
 function Cursor:is_ready()
-	return not MDOWN and self.delta
+	return not MDOWN and self.pos and self.dir
 end
 
 -----------------------------------------
 -- Recipe
 
-local Recipe = { length = 0 }
+local Recipe = {
+	length = 0,
+	step = 2,
+	live = true,
+}
 
 function Recipe:reset()
 	Cursor:reset()
@@ -208,6 +205,8 @@ function Recipe:reset()
 		self[i] = nil
 	end
 	self.length = 0
+	self.step = 2
+	self.live = true
 end
 
 function Recipe:show()
@@ -220,7 +219,7 @@ end
 
 function Recipe:finish()
 	g.reset()
-	
+	-- TODO
 end
 
 function Recipe:push(cell)
@@ -229,21 +228,37 @@ function Recipe:push(cell)
 	self.length = self.length + 1
 end
 
-function Recipe:insert(len)
+function Recipe:instruct(len)
 	History:push()
 	table.insert(self, len)
-	for i=1, len do self:push(5) end
-	if len ~= 0 then self:push(2) end
-	self:push(1)
-	g.run(self.length + 10)
+	self.step = self.step + 2
+	
+	if self.live then
+		Cursor:place(5)
+		Cursor:push(5)
+		g.run(len)
+		Cursor:pop()
+		Cursor:place(2)
+		g.run(self.step + self.length)
+	else
+		for i=1, len do self:push(5) end
+		if len ~= 0 then self:push(2) end
+		self:push(1)
+	end
+
 end
 
-function Recipe:remove()
+function Recipe:undo()
 	local len = table.remove(self)
 	if not len then return end
-	for i=0, len do Cursor:pop() end
-	if len ~= 0 then Cursor:pop() end
-	History:pop()
+	self.step = self.step - 2
+	if self.live then
+		History:pop()
+	else
+		self.length = self.length - len - (len ~= 0 and 1 or 0)
+		for i=0, len do Cursor:pop() end
+		if len ~= 0 then Cursor:pop() end
+	end
 end
 
 -----------------------------------------
@@ -276,11 +291,11 @@ local handler = {
 
 		if gp.validint(key) then
 			local len = tonumber(key)
-			Recipe:insert(len)
+			Recipe:instruct(len)
 		elseif key == "space" then
-			Recipe:insert(0)
+			Recipe:instruct(0)
 		elseif key == "delete" or key == "tab" then
-			Recipe:remove()
+			Recipe:undo()
 		end
 
 		Recipe:show()
@@ -291,17 +306,19 @@ local handler = {
 local function tick()
 	if MDOWN then
 		local pos = mouse_pos()
-		local delta = {
-			x = sign(pos.x - Cursor.pos.x),
-			y = sign(pos.y - Cursor.pos.y),
-		}
-		while Cursor.pos.x ~= pos.x do
-			Cursor.delta = { x=delta.x, y=0 }
-			Recipe:push(1)
+		if pos.x then
+			local dx = sign(pos.x - Cursor.pos.x)
+			while Cursor.pos.x ~= pos.x do
+				Cursor.dir = { x=dx, y=0 }
+				Recipe:push(1)
+			end
 		end
-		while Cursor.pos.y ~= pos.y do
-			Cursor.delta = { x=0, y=delta.y }
-			Recipe:push(1)
+		if pos.y then
+			local dy = sign(pos.y - Cursor.pos.y)
+			while Cursor.pos.y ~= pos.y do
+				Cursor.dir = { x=0, y=dy }
+				Recipe:push(1)
+			end
 		end
 		Cursor:show(2)
 	end
