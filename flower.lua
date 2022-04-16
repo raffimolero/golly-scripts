@@ -72,6 +72,11 @@ function History:reset()
 	self:push()
 end
 
+function History:rewind()
+	self:pop(1)
+	self:reset()
+end
+
 -- maybe there's a better way
 local function clear_grid()
 	local bounds = g.getrect()
@@ -88,8 +93,8 @@ function History:push()
     })
 end
 
-function History:pop()
-    local frame = table.remove(self)
+function History:pop(i)
+    local frame = table.remove(self, i)
 	if not frame then return end
 
     local cells = frame.cells
@@ -132,26 +137,28 @@ function Cursor:reset()
 	self.dir = nil
 end
 
-function Cursor:show(span)
+function Cursor:show(length)
 	if not self.pos then
 		g.select({})
 		return
 	end
-
-	span = span - 1
-	local offx = 0
-	local offy = 0
+	
+	length = length - 1
+	local offx, offy = 0, 0
+	local w, h = 0, 0
 
 	if self.dir then
-		offx = math.abs(self.dir.y) * span
-		offy = math.abs(self.dir.x) * span
+		offx = self.dir.x < 0 and length or 0
+		offy = self.dir.y < 0 and length or 0
+		w = math.abs(self.dir.x) * length
+		h = math.abs(self.dir.y) * length
 	end
-
+	
 	g.select {
 		self.pos.x - offx,
 		self.pos.y - offy,
-		offx * 2 + 1,
-		offy * 2 + 1,
+		w + 1,
+		h + 1,
 	}
 end
 
@@ -194,9 +201,11 @@ end
 -- Recipe
 
 local Recipe = {
+	is_live = true,
+	signals_compiled = 0,
+	signals_outdated = 0,
 	length = 0,
 	step = 2,
-	live = true,
 }
 
 function Recipe:reset()
@@ -204,9 +213,10 @@ function Recipe:reset()
 	for i in ipairs(self) do
 		self[i] = nil
 	end
+	self.signals_compiled = 0
+	self.signals_outdated = 0
 	self.length = 0
 	self.step = 2
-	self.live = true
 end
 
 function Recipe:show()
@@ -214,26 +224,36 @@ function Recipe:show()
 	for _,v in ipairs(self) do
 		out = out..v
 	end
-	g.show(out)
+	-- g.show(out)
+	g.show(self.length)
 end
 
-function Recipe:finish()
-	g.reset()
-	-- TODO
-end
-
-function Recipe:push(cell)
+function Recipe:place(cell)
 	-- if not Cursor.pos then return end
 	Cursor:push(cell)
 	self.length = self.length + 1
+end
+
+function Recipe:insert(len)
+	for i = 1, len do self:place(5) end
+	if len ~= 0 then self:place(2) end
+	self:place(1)
+	self.signals_compiled = self.signals_compiled + 1
+end
+
+function Recipe:remove(len)
+	self.length = self.length - len - (len == 0 and 1 or 2)
+	for i = 0, len do Cursor:pop() end
+	if len ~= 0 then Cursor:pop() end
+	self.signals_compiled = self.signals_compiled - 1
 end
 
 function Recipe:instruct(len)
 	History:push()
 	table.insert(self, len)
 	self.step = self.step + 2
-	
-	if self.live then
+
+	if self.is_live then
 		Cursor:place(5)
 		Cursor:push(5)
 		g.run(len)
@@ -241,23 +261,39 @@ function Recipe:instruct(len)
 		Cursor:place(2)
 		g.run(self.step + self.length)
 	else
-		for i=1, len do self:push(5) end
-		if len ~= 0 then self:push(2) end
-		self:push(1)
+		self:insert(len)
 	end
-
 end
 
 function Recipe:undo()
 	local len = table.remove(self)
 	if not len then return end
 	self.step = self.step - 2
-	if self.live then
+	if self.is_live then
 		History:pop()
+		local signals_outdated = self.signals_compiled - #self
+		if self.signals_outdated < signals_outdated then
+			signals_outdated = signals_outdated
+		end
+		g.show(self.signals_outdated)
 	else
-		self.length = self.length - len - (len ~= 0 and 1 or 0)
-		for i=0, len do Cursor:pop() end
-		if len ~= 0 then Cursor:pop() end
+		self:remove(len)
+	end
+end
+
+function Recipe:go_live()
+	History:reset()
+	
+end
+
+function Recipe:recompile()
+	History:rewind()
+	self.is_live = false
+	-- while self.signals_outdated > 0 do
+	-- 	self:undo()
+	-- end
+	for i = self.signals_compiled+1, #self do
+		self:insert(self[i])
 	end
 end
 
@@ -277,7 +313,7 @@ local handler = {
 		g.setcursor("Draw")
 		Recipe:reset()
 		Cursor.pos = mouse_pos()
-		Recipe:push(1)
+		Recipe:place(1)
 	end,
 	mup = function(btn)
 		MDOWN = false
@@ -296,6 +332,14 @@ local handler = {
 			Recipe:instruct(0)
 		elseif key == "delete" or key == "tab" then
 			Recipe:undo()
+		elseif key == "r" then
+			if Recipe.is_live then
+				Recipe.is_live = false
+				Recipe:recompile()
+			else
+				Recipe.go_live()
+				Recipe.is_live = true
+			end
 		end
 
 		Recipe:show()
@@ -310,14 +354,14 @@ local function tick()
 			local dx = sign(pos.x - Cursor.pos.x)
 			while Cursor.pos.x ~= pos.x do
 				Cursor.dir = { x=dx, y=0 }
-				Recipe:push(1)
+				Recipe:place(1)
 			end
 		end
 		if pos.y then
 			local dy = sign(pos.y - Cursor.pos.y)
 			while Cursor.pos.y ~= pos.y do
 				Cursor.dir = { x=0, y=dy }
-				Recipe:push(1)
+				Recipe:place(1)
 			end
 		end
 		Cursor:show(2)
@@ -329,4 +373,4 @@ repeat
 	g.update()
 until FINISHED
 
-Recipe:finish()
+Recipe:recompile()
