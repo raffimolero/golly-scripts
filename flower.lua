@@ -72,6 +72,11 @@ function History:reset()
 	self:push()
 end
 
+function History:rewind()
+	self:pop(1)
+	self:reset()
+end
+
 -- maybe there's a better way
 local function clear_grid()
 	local bounds = g.getrect()
@@ -88,8 +93,8 @@ function History:push()
     })
 end
 
-function History:pop()
-    local frame = table.remove(self)
+function History:pop(i)
+    local frame = table.remove(self, i)
 	if not frame then return end
 
     local cells = frame.cells
@@ -216,7 +221,7 @@ function Recipe:show()
 end
 
 function Recipe:finish()
-	g.reset()
+	History:rewind()
 	for _,v in ipairs(self) do
 		self:insert(v)
 	end
@@ -238,7 +243,7 @@ function Recipe:instruct(len)
 	History:push()
 	table.insert(self, len)
 	self.step = self.step + 2
-	
+
 	Cursor:place(5)
 	Cursor:push(5)
 	g.run(len)
