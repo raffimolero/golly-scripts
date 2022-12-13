@@ -1,5 +1,5 @@
-----------------------------------------
--- globals
+----------------------------------------------------------------------------------
+-- globals, ignore these if you just want the keybinds
 
 local g = golly()
 local gp = require 'gplus'
@@ -13,60 +13,89 @@ local Cursor = {
 	anchor = {1, 1},
 	head = {1, 1},
 	hold = 0,
-	mode = 'normal',
+	mode = 'move',
 	data = nil,
 }
 
-local function quit()
+function quit()
 	FINISHED = true
 	Cursor:finish()
 	g.select({})
 end
 
------------------------------------------
--- keybinds
+--------------------------------------------------------------------------------
+-- it's like vim for golly or something idk
+-- edit these however you like
+-- it's not my fault if you break it but you can always redownload my version
 
-local normalbinds = {
+local PLACE_BIND = 'space'
+
+local movebinds = {
 	[':'] = quit,
+	-- goes into text mode
 	i = function(self) self:toggletext() end,
 
+	-- so uh movement, holding shift leaves the "anchor" in place so you can resize the selection
+	-- you can also type numbers like 10k to move up 10 cells
+	-- 10 shift+K resizes the selection up by 10 cells
 	k = function(self, mods) self:move_by(0, -1, mods) end,
 	j = function(self, mods) self:move_by(0, 1, mods)  end,
 	h = function(self, mods) self:move_by(-1, 0, mods) end,
 	l = function(self, mods) self:move_by(1, 0, mods)  end,
 
+	-- these change the color of the cursor
 	q = function(self) self:change_state(-1) end,
 	e = function(self) self:change_state(1) end,
 
-	r = function(self) self:pick() end,
-	f = function(self) self:place() end,
-	x = function(self) self:clear() end,
-	c = function(self) self:copy() end,
-	v = function(self) self:paste() end,
+	-- place a cell with space (default)
+	-- you can hold space while moving to "draw" a line
+	-- hold space, type numbers, then press a direction to draw a long line
+	-- in that order, otherwise 'space' will eat up the number itself because yes
+	[PLACE_BIND] = function(self) self:place() end,
+
+	-- pick the color under your cursor head with this
+	f = function(self) self:pick() end,
+
+	-- here are your selection manipulation operations
+	-- sadly no rotations or flips yet
+	d = function(self) self:copy() self:clear() end,
+	y = function(self) self:copy() end,
+	p = function(self) self:paste() end,
+	r = function(self) self.paste('copy') end,
 }
 
+-- these only work when you hold shift
 local textbinds = {
 	['return'] = function(self) self:toggletext() end,
 
+	-- WARNING: these will immediately forget everything you've ever typed.
+	-- backspace relies on having a proper text history for things to work,
+	-- and i'm not about to implement history with h and l,
+	-- and especially not j and k, it'd be difficult
 	k = function(self) self.data = {} self:move_by(0, -6) end,
 	j = function(self) self.data = {} self:move_by(0, 6)  end,
 	h = function(self) self.data = {} self:move_by(-4, 0) end,
 	l = function(self) self.data = {} self:move_by(4, 0)  end,
 
+	-- oh by the way you can change your font color
 	q = function(self) self:change_state(-1) end,
 	e = function(self) self:change_state(1) end,
 
-	x = function(self) self:clear() end,
-	c = function(self) self:copy() end,
-	v = function(self) self:paste() end,
+	-- and your usual selection manipulation business
+	d = function(self) self:clear() end,
+	y = function(self) self:copy() end,
+	p = function(self) self:paste() end,
 }
 
+-- if you have any objections or suggestions for the font change them here
 local textfont = {
 	['return'] = function(self) self:crlf() end,
 	delete = function(self) self:backspace() end,
 
-	space = {'', 1},
-	tab = {'', 7},
+	-- there is an automatic +1 width for all characters
+	-- if the width is not specified it defaults to 3
+	space = {'!', 1},
+	tab = {'!', 7},
 
 	a = {'.A$A.A$3A$A.A$A.A!'},
 	b = {'2A$A.A$2A$A.A$2A!'},
@@ -141,23 +170,7 @@ local textfont = {
 }
 
 -----------------------------------------
--- util
-
-local function map(f, arr)
-	local out = {}
-	for _,v in ipairs(arr) do
-		table.insert(out, f(v))
-	end
-end
-
-local function find(arr, val)
-	for i,v in ipairs(arr) do
-		if v == val then
-			return i
-		end
-	end
-	return nil
-end
+-- framework
 
 local function dbg(t)
 	if type(t) ~= 'table' then
@@ -169,9 +182,6 @@ local function dbg(t)
 	end
 	return str..'}'
 end
-
------------------------------------------
--- framework
 
 function statestr(state)
 	local msd = state > 24 and string.char((state - 1) / 24 + 111) or ''
@@ -216,9 +226,11 @@ local function handle_event(handler)
 	elseif type == 'kup' then
 		HELD[a] = nil
 	elseif type == 'click' then
-		do return quit() end -- HACK
+		-- HACK: golly does not like it when you use a mouse while using this script
+		do return quit() end
 		HELD['m'..c] = true
 	elseif type == 'mup' then
+		do return quit() end
 		HELD['m'..a] = nil
 	end
 
@@ -292,7 +304,7 @@ end
 -- public
 
 function Cursor:toggletext()
-	if self.mode == 'normal' then
+	if self.mode == 'move' then
 		self.mode = 'text'
 		self.data = {}
 		self:move_point('anchor', self.head[1] + 2, self.head[2] + 4)
@@ -300,9 +312,8 @@ function Cursor:toggletext()
 			self:write(1)
 		end
 	else
-		self.mode = 'normal'
+		self.mode = 'move'
 		self.data = nil
-		self:text(' ')
 		self:move_point('anchor', table.unpack(self.head))
 	end
 	self:update()
@@ -369,7 +380,7 @@ function Cursor:move_by(dx, dy, mods)
 		self:move_point_by('anchor', dx, dy)
 	end
 	self:move_point_by('head', dx, dy)
-	if self.mode == 'normal' and HELD.f then self:place() end
+	if self.mode == 'move' and HELD[PLACE_BIND] then self:place() end
 end
 
 function Cursor:type(rle, w)
@@ -404,11 +415,6 @@ function Cursor:crlf()
 end
 
 -----------------------------------------
--- macros
-
-
-
------------------------------------------
 -- main
 
 Cursor:move_point('anchor', gp.getposint())
@@ -430,11 +436,11 @@ function Cursor:text(key, mods)
 		mods.shift = nil
 		self:text(key, mods)
 	else
-		g.show('unknown keybind: '..tostring(key))
+		g.show('unknown text keybind: '..tostring(key))
 	end
 end
 
-function Cursor:normal(key, mods)
+function Cursor:move(key, mods)
 	-- g.show(dbg(key))
 	-- do return end
 
@@ -443,12 +449,13 @@ function Cursor:normal(key, mods)
 		g.show(REPS)
 	else
 		if key == ';' then
+			if not self.data then return end
 			REPS = self.data.reps
 			key = self.data.key
 			mods = self.data.mods
 		end
 
-		local fn = normalbinds[key]
+		local fn = movebinds[key]
 		if fn then
 			for i = 1, REPS or 1 do fn(self, mods) end
 			self.data = {
@@ -458,7 +465,7 @@ function Cursor:normal(key, mods)
 			}
 			g.show('')
 		else
-			g.show('unknown keybind: '..tostring(key))
+			g.show('unknown move keybind: '..tostring(key))
 		end
 		REPS = nil
 	end 
@@ -470,7 +477,7 @@ end
 
 
 local handler = { key = function(key, mods) Cursor:handle(key, mods) end }
-local function tick() end
+-- local function tick() end
 
 repeat
 	handle_event(handler)
@@ -478,4 +485,5 @@ repeat
 	g.update()
 until FINISHED
 
------------------------------------------
+----------------------------------------------------------------------------------
+-- wow you've reached the end of this trip
