@@ -66,7 +66,7 @@ local movebinds = {
 	d = function(self) self:copy() self:clear() end,
 	y = function(self) self:copy() end,
 	p = function(self) self:paste() end,
-	r = function(self) self.paste('copy') end,
+	r = function(self) self:paste('copy') end,
 }
 
 -- these only work when you hold shift
@@ -91,6 +91,7 @@ local textbinds = {
 	d = function(self) self:clear() end,
 	y = function(self) self:copy() end,
 	p = function(self) self:paste() end,
+	r = function(self) self:paste('copy') end,
 }
 
 -- if you have any objections or suggestions for the font change them here
