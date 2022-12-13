@@ -28,6 +28,7 @@ end
 -- edit these however you like
 -- it's not my fault if you break it but you can always redownload my version
 
+-- tapping this key will place a cell, but you have to pick a state first
 local PLACE_BIND = 'space'
 
 local movebinds = {
@@ -47,7 +48,7 @@ local movebinds = {
 	h = function(self, mods) self:move_by(-1, 0, mods) end,
 	l = function(self, mods) self:move_by(1, 0, mods)  end,
 
-	-- these change the color of the cursor
+	-- these change the cell state of the cursor
 	q = function(self) self:change_state(-1) end,
 	e = function(self) self:change_state(1) end,
 
@@ -481,7 +482,9 @@ function Cursor:handle(key, mods)
 end
 
 
-local handler = { key = function(key, mods) Cursor:handle(key, mods) end }
+local handler = {
+	key = function(key, mods) Cursor:handle(key, mods) end
+}
 -- local function tick() end
 
 repeat
