@@ -31,7 +31,11 @@ end
 local PLACE_BIND = 'space'
 
 local movebinds = {
+	-- typing a colon in move mode quits the script
+	-- if you don't quit the script properly,
+	-- you'll be left with your cursor head and selection just hanging out
 	[':'] = quit,
+
 	-- goes into text mode
 	i = function(self) self:toggletext() end,
 
@@ -66,6 +70,7 @@ local movebinds = {
 
 -- these only work when you hold shift
 local textbinds = {
+	-- shift+enter gets out of text mode
 	['return'] = function(self) self:toggletext() end,
 
 	-- WARNING: these will immediately forget everything you've ever typed.
