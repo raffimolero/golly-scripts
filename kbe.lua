@@ -63,6 +63,7 @@ local movebinds = {
 
 	-- here are your selection manipulation operations
 	-- sadly no rotations or flips yet
+	x = function(self) self:clear() end,
 	d = function(self) self:copy() self:clear() end,
 	y = function(self) self:copy() end,
 	p = function(self) self:paste() end,
@@ -88,6 +89,7 @@ local textbinds = {
 	e = function(self) self:change_state(1) end,
 
 	-- and your usual selection manipulation business
+	x = function(self) self:clear() end,
 	d = function(self) self:clear() end,
 	y = function(self) self:copy() end,
 	p = function(self) self:paste() end,
