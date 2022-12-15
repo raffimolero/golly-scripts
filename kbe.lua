@@ -1,105 +1,87 @@
-----------------------------------------------------------------------------------
--- globals, ignore these if you just want the keybinds
-
-local g = golly()
-local gp = require 'gplus'
-local STATE_COUNT = g.numstates()
-
-local HELD = {}
-local FINISHED = false
-
-local REPS = nil
-local Cursor = {
-	anchor = {1, 1},
-	head = {1, 1},
-	hold = 0,
-	mode = 'move',
-	data = nil,
-}
-
-function quit()
-	FINISHED = true
-	Cursor:finish()
-	g.select({})
-end
-
 --------------------------------------------------------------------------------
 -- it's like vim for golly or something idk
 -- edit these however you like
 -- it's not my fault if you break it but you can always redownload my version
 
--- tapping this key will place a cell, but you have to pick a state first
-local PLACE_BIND = 'space'
+-- you can type numbers to repeat your actions a specific number of times
+-- for example, typing 10 will make all further actions repeat 10 times
+-- very useful for moving around quickly and selecting large patters
+-- if you hold space, typing hjlk in that order will draw a hollow 11 by 11 square SE of your cursor
+-- you could also use it to switch states, maybe there are rules where only every 3 states is relevant
+-- reset this number by pressing this keybind
+REPS_RESET_BIND = ';'
 
-local movebinds = {
-	-- typing a colon in move mode quits the script
-	-- if you don't quit the script properly,
-	-- you'll be left with your cursor head and selection just hanging out
-	[':'] = quit,
+binds = {
+	-- these binds work in edit mode, but you can hold shift to use them in text mode
+	common = {
+		-- movement
+		-- holding shift in edit mode leaves the "anchor" in place so you can resize the selection
+		k = function(mods) Cursor:move_input(0, -1, mods) return MOVE end, -- up
+		j = function(mods) Cursor:move_input(0, 1, mods) return MOVE end,  -- down
+		h = function(mods) Cursor:move_input(-1, 0, mods) return MOVE end, -- left
+		l = function(mods) Cursor:move_input(1, 0, mods) return MOVE end,  -- right
 
-	-- goes into text mode
-	i = function(self) self:toggletext() end,
+		-- these change the cell state of the cursor
+		q = function() Cursor:change_state(-1) end,
+		e = function() Cursor:change_state(1) end,
+		s = function() Cursor:set_state(REPS) return RESET end,
 
-	-- so uh movement, holding shift leaves the "anchor" in place so you can resize the selection
-	-- you can also type numbers like 10k to move up 10 cells
-	-- 10 shift+K resizes the selection up by 10 cells
-	k = function(self, mods) self:move_by(0, -1, mods) end,
-	j = function(self, mods) self:move_by(0, 1, mods)  end,
-	h = function(self, mods) self:move_by(-1, 0, mods) end,
-	l = function(self, mods) self:move_by(1, 0, mods)  end,
+		-- here are your selection manipulation operations
+		-- sadly no rotations or flips yet
+		-- holding these, then moving, will perform them after the move
+		-- so for example, 10pllll will paste once, then 4 more times every 10 cells to the right
+		-- might be useful for tiling patterns
+		x = function() Cursor:clear() return AFTER_MOVE end,
+		d = function() Cursor:copy() Cursor:clear() return AFTER_MOVE end,
+		y = function() Cursor:copy() return AFTER_MOVE end,
+		p = function() Cursor:paste() return AFTER_MOVE end,
+		r = function() Cursor:paste('copy') return AFTER_MOVE end,
+	},
 
-	-- these change the cell state of the cursor
-	q = function(self) self:change_state(-1) end,
-	e = function(self) self:change_state(1) end,
+	-- these only work in edit mode, the default mode
+	edit = {
+		-- typing a colon quits the script
+		-- if you don't quit the script properly, the cursor head and selection will just hang out
+		[':'] = function() quit() return RESET end,
 
-	-- place a cell with space (default)
-	-- you can hold space while moving to "draw" a line
-	-- hold space, type numbers, then press a direction to draw a long line
-	-- in that order, otherwise 'space' will eat up the number itself because yes
-	[PLACE_BIND] = function(self) self:place() end,
+		-- goes into text mode
+		i = function() Cursor:toggletext() return RESET end,
 
-	-- pick the color under your cursor head with this
-	f = function(self) self:pick() end,
+		-- place the selected cell state down
+		-- holding this while moving will draw a line
+		space = function() Cursor:place() return DURING_MOVE end,
 
-	-- here are your selection manipulation operations
-	-- sadly no rotations or flips yet
-	x = function(self) self:clear() end,
-	d = function(self) self:copy() self:clear() end,
-	y = function(self) self:copy() end,
-	p = function(self) self:paste() end,
-	r = function(self) self:paste('copy') end,
+		-- pick the color under your cursor head with this
+		f = function() Cursor:pick() end,
+	},
+
+	-- these only work when you hold shift
+	text = {
+		-- shift+enter returns to edit mode
+		['return'] = function() Cursor:toggletext() return RESET end,
+
+		-- shift+hjkl now move by 4x and 6y; most characters are 3 by 5
+		-- be careful, moving your cursor this way will cause it to forget what you have typed
+		-- this means you can no longer delete different width characters, and especially newlines
+
+		-- shift+q/e/s still work fine, they change your "font color"
+		-- selection manipulation still works as usual
+
+		-- use alt+<num> to type numbers, not shift
+		-- use alt+; to reset, or whatever you bound that to
+		-- yes, you can type multiple letters at once, don't ask
+	}
 }
 
--- these only work when you hold shift
-local textbinds = {
-	-- shift+enter gets out of text mode
-	['return'] = function(self) self:toggletext() end,
-
-	-- WARNING: these will immediately forget everything you've ever typed.
-	-- backspace relies on having a proper text history for things to work,
-	-- and i'm not about to implement history with h and l,
-	-- and especially not j and k, it'd be difficult
-	k = function(self) self.data = {} self:move_by(0, -6) end,
-	j = function(self) self.data = {} self:move_by(0, 6)  end,
-	h = function(self) self.data = {} self:move_by(-4, 0) end,
-	l = function(self) self.data = {} self:move_by(4, 0)  end,
-
-	-- oh by the way you can change your font color
-	q = function(self) self:change_state(-1) end,
-	e = function(self) self:change_state(1) end,
-
-	-- and your usual selection manipulation business
-	x = function(self) self:clear() end,
-	d = function(self) self:clear() end,
-	y = function(self) self:copy() end,
-	p = function(self) self:paste() end,
-	r = function(self) self:paste('copy') end,
-}
+for k,v in pairs(binds.common) do
+	binds.edit[k] = v
+	binds.text[k] = v
+end
 
 -- if you have any objections or suggestions for the font change them here
-local textfont = {
-	['return'] = function(self) self:crlf() end,
-	delete = function(self) self:backspace() end,
+font = {
+	['return'] = function() Cursor:crlf() return RESET end,
+	delete = function() Cursor:backspace() end,
 
 	-- there is an automatic +1 width for all characters
 	-- if the width is not specified it defaults to 3
@@ -181,7 +163,18 @@ local textfont = {
 -----------------------------------------
 -- framework
 
-local function dbg(t)
+g = golly()
+gp = require 'gplus'
+STATE_COUNT = g.numstates()
+
+QUIT = false
+function quit()
+	QUIT = true
+	Cursor:finish()
+	g.select({})
+end
+
+function dbg(t)
 	if type(t) ~= 'table' then
 		return tostring(t)
 	end
@@ -198,12 +191,17 @@ function statestr(state)
 	return msd..lsd
 end
 
-local function mouse_pos()
+function mouse_pos()
 	local x, y = gp.split(g.getxy())
 	return {
 		x = tonumber(x),
 		y = tonumber(y),
 	}
+end
+
+function pan(dx, dy)
+	x, y = gp.getposint()
+	gp.setposint(x+dx, y+dy)
 end
 
 local function modifiers(str)
@@ -215,6 +213,7 @@ local function modifiers(str)
 	}
 end
 
+-- unused
 local function bind(key, mods)
 	local bind = ''
 	for k,v in pairs(mods) do
@@ -223,30 +222,19 @@ local function bind(key, mods)
 	return bind..key
 end
 
+BUSYWAIT = 0
 local function handle_event(handler)
+	BUSYWAIT = BUSYWAIT + 1
 	local event = g.getevent()
+	g.show(BUSYWAIT)
 	if event == '' then return end
+	BUSYWAIT = 0
 	local type, a, b, c, d = gp.split(event)
 
 	local func = handler[type]
-
-	if type == 'key' then
-		HELD[a] = true
-	elseif type == 'kup' then
-		HELD[a] = nil
-	elseif type == 'click' then
-		-- HACK: golly does not like it when you use a mouse while using this script
-		do return quit() end
-		HELD['m'..c] = true
-	elseif type == 'mup' then
-		do return quit() end
-		HELD['m'..a] = nil
-	end
-
 	if func then
 		local args
 		if type == 'key' then
-			HELD[a] = true
 			args = {a, modifiers(b)}
 		elseif type == 'kup' then
 			args = {a}
@@ -265,6 +253,14 @@ end
 
 -----------------------------------------
 -- Cursor
+
+Cursor = {
+	anchor = {1, 1},
+	head = {1, 1},
+	hold = 1,
+	mode = 'edit',
+	data = nil,
+}
 
 function Cursor:read()
 	return g.getcell(self.head[1], self.head[2])
@@ -289,8 +285,8 @@ function Cursor:move_point(p, x, y)
 end
 
 function Cursor:update()
-	x = {self.anchor[1], self.head[1]}
-	y = {self.anchor[2], self.head[2]}
+	local x = {self.anchor[1], self.head[1]}
+	local y = {self.anchor[2], self.head[2]}
 	table.sort(x)
 	table.sort(y)
 	g.select({
@@ -313,7 +309,7 @@ end
 -- public
 
 function Cursor:toggletext()
-	if self.mode == 'move' then
+	if self.mode == 'edit' then
 		self.mode = 'text'
 		self.data = {}
 		self:move_point('anchor', self.head[1] + 2, self.head[2] + 4)
@@ -321,7 +317,7 @@ function Cursor:toggletext()
 			self:write(1)
 		end
 	else
-		self.mode = 'move'
+		self.mode = 'edit'
 		self.data = nil
 		self:move_point('anchor', table.unpack(self.head))
 	end
@@ -342,7 +338,7 @@ end
 
 function Cursor:paste(mode)
 	self:swap()
-	x, y, w, h = table.unpack(g.getselrect())
+	local x, y, w, h = table.unpack(g.getselrect())
 	g.paste(x, y, mode or 'or')
 	self:swap()
 end
@@ -351,10 +347,17 @@ function Cursor:finish()
 	self:swap()
 end
 
-function Cursor:change_state(by)
-	self:swap()
-	self.hold = (self.hold + STATE_COUNT + by) % STATE_COUNT
-	self:swap()
+function Cursor:change_state(amount)
+	local state = self:read() + amount
+	state = (state + STATE_COUNT) % STATE_COUNT
+	self:write(state)
+	g.show('changed state to '..state)
+end
+
+function Cursor:set_state(state)
+	state = (state or 0) % STATE_COUNT
+	self:write(state)
+	g.show('set state to '..state)
 end
 
 -- do not be confused.
@@ -376,20 +379,14 @@ function Cursor:move_point_by(p, dx, dy)
 	)
 end
 
-
 function Cursor:move_by(dx, dy, mods)
 	mods = mods or {}
-	-- pan
-	x, y = gp.getposint()
-	gp.setposint(x+dx, y+dy)
-	if mods.ctrl then
-		return
-	end
+	pan(dx, dy)
+	if mods.ctrl then return end
 	if not mods.shift then
 		self:move_point_by('anchor', dx, dy)
 	end
 	self:move_point_by('head', dx, dy)
-	if self.mode == 'move' and HELD[PLACE_BIND] then self:place() end
 end
 
 function Cursor:type(rle, w)
@@ -424,6 +421,68 @@ function Cursor:crlf()
 end
 
 -----------------------------------------
+-- Repetitions
+
+function reps_reset()
+	REPS = nil
+	g.show(';')
+end
+reps_reset()
+
+function reps_try_push(key)
+	if key == REPS_RESET_BIND then
+		reps_reset()
+	elseif gp.validint(key) then
+		REPS = (REPS or 0) * 10 + tonumber(key)
+		g.show(REPS)
+	else
+		return false
+	end
+	return true
+end
+
+
+MOVE = 0
+RESET = 1
+DURING_MOVE = 2
+AFTER_MOVE = 3
+
+HeldButtons = {
+	[DURING_MOVE] = {},
+	[AFTER_MOVE] = {},
+}
+
+function HeldButtons:run(category)
+	for k,v in pairs(self[category]) do
+		Cursor:handle(k, mods)
+	end
+end
+
+function HeldButtons:remove(key)
+	self[DURING_MOVE][key] = nil
+	self[AFTER_MOVE][key] = nil
+end
+
+function Cursor:run(key, fn, mods)
+	local category = fn(mods)
+	local actions = HeldButtons[category]
+	if actions then
+		actions[key] = true
+		return
+	elseif category == RESET then
+		reps_reset()
+		return
+	end
+
+	HeldButtons:run(DURING_MOVE)
+	for i = 2, REPS or 1 do
+		fn(mods)
+		HeldButtons:run(DURING_MOVE)
+	end
+	HeldButtons:run(AFTER_MOVE)
+end
+
+-----------------------------------------
 -- main
 
 Cursor:move_point('anchor', gp.getposint())
@@ -432,15 +491,27 @@ Cursor:move_point('head', gp.getposint())
 -----------------------------------------
 -- event handling
 
+function Cursor:move_input(dx, dy, mods)
+	if self.mode == 'text' then
+		dx = dx * 4
+		dy = dy * 6
+		self.data = {}
+	end
+	self:move_by(dx, dy, mods)
+end
+
 function Cursor:text(key, mods)
 	mods = mods or {}
-	local switch = mods.shift and textbinds or textfont
+	if mods.alt and reps_try_push(key) then return end
+
+	local switch = mods.shift and binds.text or font
 	local item = switch[key]
 	local ty = type(item)
 	if ty == 'function' then
-		item(self)
+		self:run(key, item, mods)
 	elseif ty == 'table' then
-		Cursor:type(table.unpack(item))
+		fn = function() self:type(table.unpack(item)) end
+		self:run(key, fn, mods)
 	elseif mods.shift then
 		mods.shift = nil
 		self:text(key, mods)
@@ -449,44 +520,30 @@ function Cursor:text(key, mods)
 	end
 end
 
-function Cursor:move(key, mods)
+function Cursor:edit(key, mods)
 	-- g.show(dbg(key))
 	-- do return end
+	if reps_try_push(key) then return end
 
-	if gp.validint(key) then
-		REPS = (REPS or 0) * 10 + tonumber(key)
-		g.show(REPS)
+	local fn = binds.edit[key]
+	if fn then
+		self:run(key, fn, mods)
 	else
-		if key == ';' then
-			if not self.data then return end
-			REPS = self.data.reps
-			key = self.data.key
-			mods = self.data.mods
-		end
-
-		local fn = movebinds[key]
-		if fn then
-			for i = 1, REPS or 1 do fn(self, mods) end
-			self.data = {
-				reps = REPS,
-				key = key,
-				mods = mods,
-			}
-			g.show('')
-		else
-			g.show('unknown move keybind: '..tostring(key))
-		end
-		REPS = nil
-	end 
+		g.show('unknown edit keybind: '..tostring(key))
+	end
 end
 
 function Cursor:handle(key, mods)
 	self[self.mode](self, key, mods)
 end
 
-
 local handler = {
-	key = function(key, mods) Cursor:handle(key, mods) end
+	key = function(key, mods)
+		Cursor:handle(key, mods)
+	end,
+	kup = function(key)
+		HeldButtons:remove(key)
+	end,
 }
 -- local function tick() end
 
@@ -494,7 +551,9 @@ repeat
 	handle_event(handler)
 	-- tick()
 	g.update()
-until FINISHED
+until QUIT
+g.show('Quit kbe.lua.')
+g.update()
 
 ----------------------------------------------------------------------------------
 -- wow you've reached the end of this trip
