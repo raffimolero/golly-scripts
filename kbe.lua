@@ -14,6 +14,13 @@ REPS_RESET_BIND = ';'
 binds = {
 	-- these binds work in edit mode, but you can hold shift to use them in text mode
 	common = {
+		-- deletes the ones digit of your number
+		delete = function() reps_pop() return CANCEL end,
+
+		-- sets the zoom level
+		a = function() zoom(1) end,
+		z = function() zoom(-1) end,
+
 		-- movement
 		-- holding shift in edit mode leaves the "anchor" in place so you can resize the selection
 		k = function(mods) Cursor:move_input(0, -1, mods) return MOVE end, -- up
@@ -161,6 +168,47 @@ font = {
 }
 
 -----------------------------------------
+-- message
+
+function dbg(t)
+	if type(t) == 'string' then
+		return "'"..t.."'"
+	elseif type(t) ~= 'table' then
+		return tostring(t)
+	end
+	local str = '{'
+	for k,v in pairs(t) do
+		str = str..' '..k..':'..dbg(v)..', '
+	end
+	return str..'}'
+end
+
+BUFFER = {''}
+FLUSH = true
+function print(msg, buf)
+	buf = buf or BUFFER
+	if FLUSH then
+		buf[1] = ''
+		FLUSH = false
+	end
+	buf[1] = buf[1]..'['..msg..'] '
+end
+
+function persistent_message()
+	local buf = {''}
+	print('Mode: '..Cursor.mode, buf)
+	print('State: '..Cursor:read(), buf)
+	print('Reps: '..(REPS or '')..REPS_RESET_BIND, buf)
+	return buf[1]
+end
+
+function flush()
+	g.show(persistent_message()..BUFFER[1])
+	g.update()
+	FLUSH = true
+end
+
+-----------------------------------------
 -- framework
 
 g = golly()
@@ -172,17 +220,6 @@ function quit()
 	QUIT = true
 	Cursor:finish()
 	g.select({})
-end
-
-function dbg(t)
-	if type(t) ~= 'table' then
-		return tostring(t)
-	end
-	local str = '{'
-	for k,v in pairs(t) do
-		str = str..' '..k..':'..dbg(v)..', '
-	end
-	return str..'}'
 end
 
 function statestr(state)
@@ -197,6 +234,10 @@ function mouse_pos()
 		x = tonumber(x),
 		y = tonumber(y),
 	}
+end
+
+function zoom(exponent)
+	g.setmag(g.getmag() + exponent)
 end
 
 function pan(dx, dy)
@@ -222,13 +263,9 @@ local function bind(key, mods)
 	return bind..key
 end
 
-BUSYWAIT = 0
 local function handle_event(handler)
-	BUSYWAIT = BUSYWAIT + 1
 	local event = g.getevent()
-	g.show(BUSYWAIT)
-	if event == '' then return end
-	BUSYWAIT = 0
+	if event == '' then return false end
 	local type, a, b, c, d = gp.split(event)
 
 	local func = handler[type]
@@ -249,6 +286,7 @@ local function handle_event(handler)
 	else
 		g.doevent(event)
 	end
+	return true
 end
 
 -----------------------------------------
@@ -349,15 +387,13 @@ end
 
 function Cursor:change_state(amount)
 	local state = self:read() + amount
-	state = (state + STATE_COUNT) % STATE_COUNT
+	state = state % STATE_COUNT
 	self:write(state)
-	g.show('changed state to '..state)
 end
 
 function Cursor:set_state(state)
 	state = (state or 0) % STATE_COUNT
 	self:write(state)
-	g.show('set state to '..state)
 end
 
 -- do not be confused.
@@ -416,36 +452,34 @@ function Cursor:crlf()
 		if delta[2] ~= 0 then break end
 		cr = cr + delta[1] - 1
 	end
-	g.show(cr)
 	self:push_motion(cr - 1, 6)
 end
 
 -----------------------------------------
 -- Repetitions
 
-function reps_reset()
-	REPS = nil
-	g.show(';')
-end
-reps_reset()
-
+REPS = nil
 function reps_try_push(key)
 	if key == REPS_RESET_BIND then
-		reps_reset()
+		REPS = nil
 	elseif gp.validint(key) then
 		REPS = (REPS or 0) * 10 + tonumber(key)
-		g.show(REPS)
 	else
 		return false
 	end
 	return true
 end
 
+function reps_pop()
+	REPS = (REPS or 0) // 10
+	if REPS == 0 then REPS = nil end
+end
 
 MOVE = 0
-RESET = 1
-DURING_MOVE = 2
-AFTER_MOVE = 3
+DURING_MOVE = 1
+AFTER_MOVE = 2
+CANCEL = 3
+RESET = 4
 
 HeldButtons = {
 	[DURING_MOVE] = {},
@@ -468,11 +502,11 @@ function Cursor:run(key, fn, mods)
 	local actions = HeldButtons[category]
 	if actions then
 		actions[key] = true
-		return
 	elseif category == RESET then
-		reps_reset()
-		return
+		REPS = nil
 	end
+
+	if (category or MOVE) ~= MOVE then return end
 
 	HeldButtons:run(DURING_MOVE)
 	for i = 2, REPS or 1 do
@@ -495,6 +529,7 @@ function Cursor:move_input(dx, dy, mods)
 	if self.mode == 'text' then
 		dx = dx * 4
 		dy = dy * 6
+		mods.shift = nil
 		self.data = {}
 	end
 	self:move_by(dx, dy, mods)
@@ -516,20 +551,18 @@ function Cursor:text(key, mods)
 		mods.shift = nil
 		self:text(key, mods)
 	else
-		g.show('unknown text keybind: '..tostring(key))
+		print('unknown text keybind: '..tostring(key))
 	end
 end
 
 function Cursor:edit(key, mods)
-	-- g.show(dbg(key))
-	-- do return end
 	if reps_try_push(key) then return end
 
 	local fn = binds.edit[key]
 	if fn then
 		self:run(key, fn, mods)
 	else
-		g.show('unknown edit keybind: '..tostring(key))
+		print('unknown edit keybind: '..tostring(key))
 	end
 end
 
@@ -545,14 +578,37 @@ local handler = {
 		HeldButtons:remove(key)
 	end,
 }
--- local function tick() end
+-- local function tick(delta) end
 
+RECENT = 10
+IDLE = 500
+IDLE_TIMEOUT = 2000 -- ms
+
+local idle_countdown = IDLE_TIMEOUT
+local is_idle = true
 repeat
-	handle_event(handler)
-	-- tick()
+	if handle_event(handler) then
+		idle_countdown = IDLE_TIMEOUT
+		if is_idle then
+			print('Tickrate back to normal.')
+		end
+		is_idle = false
+	elseif idle_countdown > 0 then
+		idle_countdown = idle_countdown - RECENT
+		is_idle = false
+	else
+		if not is_idle then
+			print('Idle. Reducing tickrate.')
+		end
+		is_idle = true
+	end
+	-- tick(wait)
+	flush()
+	FLUSH = true
 	g.update()
+	g.sleep(is_idle and IDLE or RECENT)
 until QUIT
-g.show('Quit kbe.lua.')
+g.show('[Quit kbe.lua.]')
 g.update()
 
 ----------------------------------------------------------------------------------
