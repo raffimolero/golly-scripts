@@ -11,7 +11,7 @@
 -- reset this number by pressing this keybind
 REPS_RESET_BIND = ';'
 
-binds = {
+Binds = {
 	-- these binds work in edit mode, but you can hold shift to use them in text mode
 	common = {
 		-- deletes the ones digit of your number
@@ -22,11 +22,17 @@ binds = {
 		z = function() zoom(-1) end,
 
 		-- movement
-		-- holding shift in edit mode leaves the "anchor" in place so you can resize the selection
 		k = function(mods) Cursor:move_input(0, -1, mods) return MOVE end, -- up
 		j = function(mods) Cursor:move_input(0, 1, mods) return MOVE end,  -- down
 		h = function(mods) Cursor:move_input(-1, 0, mods) return MOVE end, -- left
 		l = function(mods) Cursor:move_input(1, 0, mods) return MOVE end,  -- right
+
+		-- holding this while moving will pan the screen without moving the cursor
+		-- unless you hold a key labeled DURING_MOVE or AFTER_MOVE,
+		-- in that case it might do something else, see the rotate and flip commands further below
+		special_mod = 'alt',
+		-- holding this while moving leaves the "anchor" in place so you can resize the selection
+		anchor_mod = 'shift',
 
 		-- these change the cell state of the cursor
 		q = function() Cursor:change_state(-1) end,
@@ -42,7 +48,14 @@ binds = {
 		d = function() Cursor:copy() Cursor:clear() return AFTER_MOVE end,
 		y = function() Cursor:copy() return AFTER_MOVE end,
 		p = function() Cursor:paste() return AFTER_MOVE end,
-		r = function() Cursor:paste('copy') return AFTER_MOVE end,
+		c = function() Cursor:paste('copy') return AFTER_MOVE end,
+
+		-- rotation defaults to clockwise, hold special_mod to make it counterclockwise
+		-- hold anchor_mod to keep your selection box in place
+		r = function(mods) Cursor:rotate(mods) return AFTER_MOVE end,
+
+		-- flips default to horizontal, hold special_mod to make it vertical
+		f = function(mods) Cursor:flip(mods) return AFTER_MOVE end,
 	},
 
 	-- these only work in edit mode, the default mode
@@ -59,30 +72,33 @@ binds = {
 		space = function() Cursor:place() return DURING_MOVE end,
 
 		-- pick the color under your cursor head with this
-		f = function() Cursor:pick() end,
+		w = function() Cursor:pick() end,
 	},
 
-	-- these only work when you hold shift
 	text = {
-		-- shift+enter returns to edit mode
+		-- text keybinds only work if you hold the escape mod
+		-- otherwise you'd just type normal letters
+		escape_mod = 'ctrl',
+
+		-- ctrl+enter returns to edit mode
 		['return'] = function() Cursor:toggletext() return RESET end,
 
-		-- shift+hjkl now move by 4x and 6y; most characters are 3 by 5
+		-- ctrl+hjkl now move by 4x and 6y; most characters are 3 by 5
 		-- be careful, moving your cursor this way will cause it to forget what you have typed
 		-- this means you can no longer delete different width characters, and especially newlines
 
-		-- shift+q/e/s still work fine, they change your "font color"
+		-- ctrl+q/e/s still work fine, they change your "font color"
 		-- selection manipulation still works as usual
 
-		-- use alt+<num> to type numbers, not shift
-		-- use alt+; to reset, or whatever you bound that to
+		-- use ctrl+<num> to type numbers
+		-- use ctrl+; to reset, or whatever you bound that to
 		-- yes, you can type multiple letters at once, don't ask
 	}
 }
 
-for k,v in pairs(binds.common) do
-	binds.edit[k] = v
-	binds.text[k] = v
+for k,v in pairs(Binds.common) do
+	Binds.edit[k] = v
+	Binds.text[k] = v
 end
 
 -- if you have any objections or suggestions for the font change them here
@@ -170,7 +186,7 @@ font = {
 -----------------------------------------
 -- message
 
-function dbg(t)
+function info(t)
 	if type(t) == 'string' then
 		return "'"..t.."'"
 	elseif type(t) ~= 'table' then
@@ -178,7 +194,7 @@ function dbg(t)
 	end
 	local str = '{'
 	for k,v in pairs(t) do
-		str = str..' '..k..':'..dbg(v)..', '
+		str = str..' '..k..':'..info(v)..', '
 	end
 	return str..'}'
 end
@@ -381,6 +397,24 @@ function Cursor:paste(mode)
 	self:swap()
 end
 
+function Cursor:rotate(mods)
+	self:swap()
+	local x, y, w, h = table.unpack(g.getselrect())
+	g.rotate(Binds:special(mods) and 1 or 0)
+	if Binds:anchor(mods) then
+		g.select({x, y, w, h})
+	else
+		-- TODO: rotate the cursor within the selection
+	end
+	self:swap()
+end
+
+function Cursor:flip(mods)
+	self:swap()
+	g.flip(Binds:special(mods) and 1 or 0)
+	self:swap()
+end
+
 function Cursor:finish()
 	self:swap()
 end
@@ -418,8 +452,8 @@ end
 function Cursor:move_by(dx, dy, mods)
 	mods = mods or {}
 	pan(dx, dy)
-	if mods.ctrl then return end
-	if not mods.shift then
+	if Binds:pan(mods) then return end
+	if not Binds:anchor(mods) then
 		self:move_point_by('anchor', dx, dy)
 	end
 	self:move_point_by('head', dx, dy)
@@ -481,39 +515,70 @@ AFTER_MOVE = 2
 CANCEL = 3
 RESET = 4
 
-HeldButtons = {
+Binds.triggers = {
 	[DURING_MOVE] = {},
 	[AFTER_MOVE] = {},
 }
 
-function HeldButtons:run(category)
-	for k,v in pairs(self[category]) do
-		Cursor:handle(k, mods)
+function Binds:trigger(category)
+	for k,v in pairs(self.triggers[category]) do
+		Cursor:handle(k, v)
 	end
 end
 
-function HeldButtons:remove(key)
-	self[DURING_MOVE][key] = nil
-	self[AFTER_MOVE][key] = nil
+function Binds:remove(key)
+	for k,v in pairs(self.triggers) do
+		v[key] = nil
+	end
+end
+
+-- TODO: add an event listener to 'key' that just puts
+-- pan, special, anchor, and escape into Binds as nil/true
+-- then fix every case of mods appearing
+
+function Binds:pan(mods)
+	if not mods[self.common.special_mod] then
+		return false
+	end
+	for k,v in pairs(self.triggers) do
+		for k,v in pairs(v) do
+			return false
+		end
+	end
+	return true
+end
+
+function Binds:special(mods)
+	return mods[self.common.special_mod]
+end
+
+function Binds:anchor(mods)
+	return mods[self.common.anchor_mod]
+end
+
+function Binds:escape(mods)
+	return mods[self.text.escape_mod]
 end
 
 function Cursor:run(key, fn, mods)
 	local category = fn(mods)
-	local actions = HeldButtons[category]
-	if actions then
-		actions[key] = true
+	local triggers = Binds.triggers[category]
+	if triggers then
+		local m = {} -- shallow copy the mods
+		for k,v in pairs(mods) do m[k] = v end
+		triggers[key] = m
 	elseif category == RESET then
 		REPS = nil
 	end
 
 	if (category or MOVE) ~= MOVE then return end
 
-	HeldButtons:run(DURING_MOVE)
+	Binds:trigger(DURING_MOVE)
 	for i = 2, REPS or 1 do
 		fn(mods)
-		HeldButtons:run(DURING_MOVE)
+		Binds:trigger(DURING_MOVE)
 	end
-	HeldButtons:run(AFTER_MOVE)
+	Binds:trigger(AFTER_MOVE)
 end
 
 -----------------------------------------
@@ -529,17 +594,19 @@ function Cursor:move_input(dx, dy, mods)
 	if self.mode == 'text' then
 		dx = dx * 4
 		dy = dy * 6
-		mods.shift = nil
-		self.data = {}
+		if not Binds:pan(mods) then
+			self.data = {}
+		end
 	end
 	self:move_by(dx, dy, mods)
 end
 
 function Cursor:text(key, mods)
 	mods = mods or {}
-	if mods.alt and reps_try_push(key) then return end
+	local escape = Binds:escape(mods)
+	if escape and reps_try_push(key) then return end
 
-	local switch = mods.shift and binds.text or font
+	local switch = escape and Binds.text or font
 	local item = switch[key]
 	local ty = type(item)
 	if ty == 'function' then
@@ -558,7 +625,7 @@ end
 function Cursor:edit(key, mods)
 	if reps_try_push(key) then return end
 
-	local fn = binds.edit[key]
+	local fn = Binds.edit[key]
 	if fn then
 		self:run(key, fn, mods)
 	else
@@ -575,14 +642,14 @@ local handler = {
 		Cursor:handle(key, mods)
 	end,
 	kup = function(key)
-		HeldButtons:remove(key)
+		Binds:remove(key)
 	end,
 }
 -- local function tick(delta) end
 
 RECENT = 10
-IDLE = 500
-IDLE_TIMEOUT = 2000 -- ms
+IDLE = 300
+IDLE_TIMEOUT = 1000 -- ms
 
 local idle_countdown = IDLE_TIMEOUT
 local is_idle = true
