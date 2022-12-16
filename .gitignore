@@ -1,1 +1,4 @@
-test.*
+# Ignore everything
+*
+!kbe.lua
+!flower.lua
