@@ -3,14 +3,6 @@
 -- edit these however you like
 -- it's not my fault if you break it but you can always redownload my version
 
--- you can type numbers to repeat your actions a specific number of times
--- for example, typing 10 will make all further actions repeat 10 times
--- very useful for moving around quickly and selecting large patters
--- if you hold space, typing hjlk in that order will draw a hollow 11 by 11 square SE of your cursor
--- you could also use it to switch states, maybe there are rules where only every 3 states is relevant
--- reset this number by pressing this keybind
-REPS_RESET_BIND = ';'
-
 Binds = {
 	-- these binds work in edit mode, but you can hold shift to use them in text mode
 	common = {
@@ -19,8 +11,14 @@ Binds = {
 		anchor_mod = 'shift',
 		special_mod = 'alt',
 
-		-- you can type numbers to move around more quickly
-		-- deletes the ones digit of your number
+		-- you can type numbers to repeat your actions a specific number of times
+		-- for example, typing 10 will make all further actions repeat 10 times
+		-- very useful for moving around quickly and selecting large patters
+		-- if you hold space, typing hjlk in that order will draw a hollow 11 by 11 square SE of your cursor
+		-- you could also use it to switch states, maybe there are rules where only every 3 states is relevant
+		-- reset this number by pressing this keybind
+		reps_reset = ';',
+		-- deletes the ones digit of the number you typed so far
 		delete = function() reps_pop() return CANCEL end,
 
 		-- sets the zoom level
@@ -235,7 +233,7 @@ function persistent_message()
 	local buf = {''}
 	print('Mode: '..Cursor.mode, buf)
 	print('State: '..Cursor:read(), buf)
-	print('Reps: '..(REPS or '')..REPS_RESET_BIND, buf)
+	print('Reps: '..(REPS or '')..Binds.common.reps_reset, buf)
 	return buf[1]
 end
 
@@ -565,7 +563,7 @@ end
 
 REPS = nil
 function reps_try_push(key)
-	if key == REPS_RESET_BIND then
+	if key == Binds.common.reps_reset then
 		REPS = nil
 	elseif gp.validint(key) then
 		REPS = (REPS or 0) * 10 + tonumber(key)
