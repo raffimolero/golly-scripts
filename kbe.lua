@@ -14,6 +14,12 @@ REPS_RESET_BIND = ';'
 Binds = {
 	-- these binds work in edit mode, but you can hold shift to use them in text mode
 	common = {
+		-- these do different things when you hold different keys
+		-- see the rotate and flip commands further below
+		anchor_mod = 'shift',
+		special_mod = 'alt',
+
+		-- you can type numbers to move around more quickly
 		-- deletes the ones digit of your number
 		delete = function() reps_pop() return CANCEL end,
 
@@ -22,25 +28,24 @@ Binds = {
 		z = function() zoom(-1) end,
 
 		-- movement
-		k = function(mods) Cursor:move_input(0, -1, mods) return MOVE end, -- up
-		j = function(mods) Cursor:move_input(0, 1, mods) return MOVE end,  -- down
-		h = function(mods) Cursor:move_input(-1, 0, mods) return MOVE end, -- left
-		l = function(mods) Cursor:move_input(1, 0, mods) return MOVE end,  -- right
-
-		-- holding this while moving will pan the screen without moving the cursor
-		-- unless you hold a key labeled DURING_MOVE or AFTER_MOVE,
-		-- in that case it might do something else, see the rotate and flip commands further below
-		special_mod = 'alt',
-		-- holding this while moving leaves the "anchor" in place so you can resize the selection
-		anchor_mod = 'shift',
+		-- special: pans the screen
+		-- anchor: resizes selection
+		-- Note: holding anything which triggers DURING_MOVE or AFTER_MOVE will prevent panning and resizing
+		k = function(mods) return Cursor:input_move(0, -1, mods) end,	-- up
+		j = function(mods) return Cursor:input_move(0, 1, mods) end,	-- down
+		h = function(mods) return Cursor:input_move(-1, 0, mods) end,	-- left
+		l = function(mods) return Cursor:input_move(1, 0, mods) end,	-- right
 
 		-- these change the cell state of the cursor
-		q = function() Cursor:change_state(-1) end,
-		e = function() Cursor:change_state(1) end,
-		s = function() Cursor:set_state(REPS) return RESET end,
+		q = function() Cursor:change_state(-1) end,	-- prev state
+		e = function() Cursor:change_state(1) end,	-- next state
+
+		-- picks the cell under the cursor
+		-- anchor_mod: selects the cell specified by repetitions
+		-- e.g. 12 shift+s selects state 12
+		s = function(mods) return Cursor:pick(mods) end,
 
 		-- here are your selection manipulation operations
-		-- sadly no rotations or flips yet
 		-- holding these, then moving, will perform them after the move
 		-- so for example, 10pllll will paste once, then 4 more times every 10 cells to the right
 		-- might be useful for tiling patterns
@@ -50,12 +55,23 @@ Binds = {
 		p = function() Cursor:paste() return AFTER_MOVE end,
 		c = function() Cursor:paste('copy') return AFTER_MOVE end,
 
-		-- rotation defaults to clockwise, hold special_mod to make it counterclockwise
+		-- rotates selection clockwise 90 degrees
+		-- anchor: keeps the selection box in place
+		-- special: counterclockwise
 		-- hold anchor_mod to keep your selection box in place
+		-- Note: if the cursor is in the SouthEast corner, it will stay in the SE corner.
+		-- same goes for the other corners.
 		r = function(mods) Cursor:rotate(mods) return AFTER_MOVE end,
 
 		-- flips default to horizontal, hold special_mod to make it vertical
 		f = function(mods) Cursor:flip(mods) return AFTER_MOVE end,
+
+		-- resets the selection to just your cursor head
+		-- anchor: moves the cursor head to your anchor, dragging your camera with it
+		-- anchor+special: moves the head back to the anchor, leaving the camera where it was
+		-- special_mod: centers your camera at the cursor head
+		-- Note: if your selection is already 1 by 1, it will hide your selection
+		v = function(mods) Cursor:deselect(mods) return CANCEL end,
 	},
 
 	-- these only work in edit mode, the default mode
@@ -70,9 +86,6 @@ Binds = {
 		-- place the selected cell state down
 		-- holding this while moving will draw a line
 		space = function() Cursor:place() return DURING_MOVE end,
-
-		-- pick the color under your cursor head with this
-		w = function() Cursor:pick() end,
 	},
 
 	text = {
@@ -83,9 +96,9 @@ Binds = {
 		-- ctrl+enter returns to edit mode
 		['return'] = function() Cursor:toggletext() return RESET end,
 
-		-- ctrl+hjkl now move by 4x and 6y; most characters are 3 by 5
+		-- ctrl+hjkl now move by font.standard_width+1 and font.standard_height+1
 		-- be careful, moving your cursor this way will cause it to forget what you have typed
-		-- this means you can no longer delete different width characters, and especially newlines
+		-- this means you can no longer delete different width characters well, especially newlines
 
 		-- ctrl+q/e/s still work fine, they change your "font color"
 		-- selection manipulation still works as usual
@@ -103,6 +116,9 @@ end
 
 -- if you have any objections or suggestions for the font change them here
 font = {
+	standard_width = 3,
+	standard_height = 5,
+
 	['return'] = function() Cursor:crlf() return RESET end,
 	delete = function() Cursor:backspace() end,
 
@@ -207,7 +223,12 @@ function print(msg, buf)
 		buf[1] = ''
 		FLUSH = false
 	end
-	buf[1] = buf[1]..'['..msg..'] '
+	buf[1] = buf[1]..'['..tostring(msg)..'] '
+end
+
+function dbg(thing)
+	print(info(thing))
+	return thing
 end
 
 function persistent_message()
@@ -235,7 +256,6 @@ QUIT = false
 function quit()
 	QUIT = true
 	Cursor:finish()
-	g.select({})
 end
 
 function statestr(state)
@@ -256,9 +276,13 @@ function zoom(exponent)
 	g.setmag(g.getmag() + exponent)
 end
 
+function pan_to(x, y)
+	gp.setposint(x, y)
+end
+
 function pan(dx, dy)
 	x, y = gp.getposint()
-	gp.setposint(x+dx, y+dy)
+	pan_to(x+dx, y+dy)
 end
 
 local function modifiers(str)
@@ -309,8 +333,8 @@ end
 -- Cursor
 
 Cursor = {
-	anchor = {1, 1},
-	head = {1, 1},
+	anchor = nil,
+	head = nil,
 	hold = 1,
 	mode = 'edit',
 	data = nil,
@@ -362,6 +386,24 @@ end
 
 -- public
 
+function Cursor:init()
+	local x, y, w, h = table.unpack(g.getselrect())
+	if x then
+		self.anchor = {x, y}
+		self.head = {x+w-1, y+h-1}
+	else
+		local x, y = gp.getposint()
+		self.anchor = {x, y}
+		self.head = {x, y}
+		self:update()
+	end
+	self:swap()
+end
+
+function Cursor:finish()
+	self:swap()
+end
+
 function Cursor:toggletext()
 	if self.mode == 'edit' then
 		self.mode = 'text'
@@ -373,8 +415,9 @@ function Cursor:toggletext()
 	else
 		self.mode = 'edit'
 		self.data = nil
-		self:move_point('anchor', table.unpack(self.head))
+		-- self:move_point('anchor', table.unpack(self.head))
 	end
+	print('Set mode to '..self.mode)
 	self:update()
 end
 
@@ -399,12 +442,23 @@ end
 
 function Cursor:rotate(mods)
 	self:swap()
-	local x, y, w, h = table.unpack(g.getselrect())
-	g.rotate(Binds:special(mods) and 1 or 0)
+	local reverse = Binds:special(mods)
+	local rect = g.getselrect()
+	g.rotate(reverse and 1 or 0)
 	if Binds:anchor(mods) then
-		g.select({x, y, w, h})
+		g.select(rect)
 	else
-		-- TODO: rotate the cursor within the selection
+		local head_left = self.head[1] == rect.x
+		local head_top = self.head[2] == rect.y
+		local x, y, w, h = table.unpack(g.getselrect())
+		self.head = {
+			x + (head_left and 0 or w - 1),
+			y + (head_top and 0 or h - 1),
+		}
+		self.anchor = {
+			x + (head_left and w - 1 or 0),
+			y + (head_top and h - 1 or 0),
+		}
 	end
 	self:swap()
 end
@@ -415,26 +469,24 @@ function Cursor:flip(mods)
 	self:swap()
 end
 
-function Cursor:finish()
-	self:swap()
-end
-
 function Cursor:change_state(amount)
 	local state = self:read() + amount
 	state = state % STATE_COUNT
 	self:write(state)
 end
 
-function Cursor:set_state(state)
-	state = (state or 0) % STATE_COUNT
-	self:write(state)
-end
-
 -- do not be confused.
 -- the real cell is the one in hold.
 -- the cursor state is the one on the grid.
-function Cursor:pick()
-	self:write(self.hold)
+function Cursor:pick(mods)
+	if Binds:anchor(mods) then
+		state = (REPS or 0) % STATE_COUNT
+		self:write(state)
+		return RESET
+	else
+		self:write(self.hold)
+		return CANCEL
+	end
 end
 
 function Cursor:place()
@@ -453,14 +505,33 @@ function Cursor:move_by(dx, dy, mods)
 	mods = mods or {}
 	pan(dx, dy)
 	if Binds:pan(mods) then return end
-	if not Binds:anchor(mods) then
+	if not Binds:expand(mods) then
 		self:move_point_by('anchor', dx, dy)
 	end
 	self:move_point_by('head', dx, dy)
 end
 
+function Cursor:deselect(mods)
+	if Binds:special(mods) then
+		pan_to(table.unpack(self.head))
+	elseif self.mode == 'text' then
+		-- TODO
+		print('deselect is not implemented for text mode')
+		return
+	elseif self.anchor[1] == self.head[1] and self.anchor[2] == self.head[2] then
+		g.select({})
+	elseif Binds:anchor(mods) then
+		if not dbg(Binds:special(mods)) then
+			pan(self.anchor[1] - self.head[1], self.anchor[2] - self.head[2])
+		end
+		self:move_point('head', table.unpack(self.anchor))
+	else
+		self:move_point('anchor', table.unpack(self.head))
+	end
+end
+
 function Cursor:type(rle, w)
-	w = w or 3
+	w = w or font.standard_width
 	local header = 'x = '..w..', y = 5, rule = '..g.getrule()..'\n'
 	rle = string.gsub(rle, 'A', statestr(self:read()))
 	rle = header..rle..'!'
@@ -536,16 +607,21 @@ end
 -- pan, special, anchor, and escape into Binds as nil/true
 -- then fix every case of mods appearing
 
-function Binds:pan(mods)
-	if not mods[self.common.special_mod] then
-		return false
-	end
+function Binds:no_triggers()
 	for k,v in pairs(self.triggers) do
 		for k,v in pairs(v) do
 			return false
 		end
 	end
 	return true
+end
+
+function Binds:pan(mods)
+	return self:special(mods) and self:no_triggers()
+end
+
+function Binds:expand(mods)
+	return self:anchor(mods) and self:no_triggers()
 end
 
 function Binds:special(mods)
@@ -562,43 +638,45 @@ end
 
 function Cursor:run(key, fn, mods)
 	local category = fn(mods)
+	if category == RESET then
+		REPS = nil
+	end
+
 	local triggers = Binds.triggers[category]
 	if triggers then
 		local m = {} -- shallow copy the mods
 		for k,v in pairs(mods) do m[k] = v end
 		triggers[key] = m
-	elseif category == RESET then
-		REPS = nil
 	end
 
 	if (category or MOVE) ~= MOVE then return end
 
-	Binds:trigger(DURING_MOVE)
+	local is_move = category == MOVE
+	if is_move then Binds:trigger(DURING_MOVE) end
 	for i = 2, REPS or 1 do
 		fn(mods)
-		Binds:trigger(DURING_MOVE)
+		if is_move then Binds:trigger(DURING_MOVE) end
 	end
-	Binds:trigger(AFTER_MOVE)
+	if is_move then Binds:trigger(AFTER_MOVE) end
 end
-
------------------------------------------
--- main
-
-Cursor:move_point('anchor', gp.getposint())
-Cursor:move_point('head', gp.getposint())
 
 -----------------------------------------
 -- event handling
 
-function Cursor:move_input(dx, dy, mods)
+function Cursor:input_move(dx, dy, mods)
 	if self.mode == 'text' then
-		dx = dx * 4
-		dy = dy * 6
+		dx = dx * (font.standard_width + 1)
+		dy = dy * (font.standard_height + 1)
+		if Binds:expand(mods) then
+			-- TODO
+			print('selecting text is not very well supported')
+		end
 		if not Binds:pan(mods) then
 			self.data = {}
 		end
 	end
 	self:move_by(dx, dy, mods)
+	return MOVE
 end
 
 function Cursor:text(key, mods)
@@ -646,6 +724,11 @@ local handler = {
 	end,
 }
 -- local function tick(delta) end
+
+-----------------------------------------
+-- main
+
+Cursor:init()
 
 RECENT = 10
 IDLE = 300
