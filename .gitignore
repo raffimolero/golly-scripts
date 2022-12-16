@@ -1,4 +1,6 @@
 # Ignore everything
 *
+
+# except
 !kbe.lua
 !flower.lua
