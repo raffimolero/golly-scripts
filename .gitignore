@@ -1,7 +1,2 @@
-# Ignore everything
-*
 
-# except
-!kbe.lua
-!flower.lua
-!make-flow6-tape.py
+(hide) *
