@@ -3,6 +3,17 @@
 -- edit these however you like
 -- it's not my fault if you break it but you can always redownload my version
 
+-- specifies how many frames to render when doing a large action
+-- for example TWEEN_FRAMES = 2 makes it so moving 10 cells right will now render at 5 cells and finally at 10
+-- set to nil if you want everything to be instant
+-- TODO: support tweens on deselect commands
+TWEEN_FRAMES = 2
+
+if TWEEN_FRAMES == 0 then
+	-- you don't want to be dividing by zero
+	TWEEN_FRAMES = nil
+end
+
 Binds = {
 	-- these binds work in edit mode, but you can hold shift to use them in text mode
 	common = {
@@ -634,8 +645,25 @@ function Binds:escape(mods)
 	return mods[self.text.escape_mod]
 end
 
-function Cursor:run(key, fn, mods)
-	local category = fn(mods)
+function Cursor:run(fn, key, mods)
+	local reps = REPS or 1
+	local call = function() fn(mods) end
+	if TWEEN_FRAMES then	
+		local render_every = reps // TWEEN_FRAMES
+		if render_every == 0 then render_every = 1 end
+		local countdown = render_every
+		call = function()
+			local out = fn(mods)
+			countdown = countdown - 1
+			if countdown == 0 then
+				countdown = render_every
+				g.update()
+			end
+			return out
+		end
+	end
+
+	local category = call()
 	if category == RESET then
 		REPS = nil
 	end
@@ -651,8 +679,8 @@ function Cursor:run(key, fn, mods)
 
 	local is_move = category == MOVE
 	if is_move then Binds:trigger(DURING_MOVE) end
-	for i = 2, REPS or 1 do
-		fn(mods)
+	for i = 2, reps do
+		call()
 		if is_move then Binds:trigger(DURING_MOVE) end
 	end
 	if is_move then Binds:trigger(AFTER_MOVE) end
@@ -686,10 +714,10 @@ function Cursor:text(key, mods)
 	local item = switch[key]
 	local ty = type(item)
 	if ty == 'function' then
-		self:run(key, item, mods)
+		self:run(item, key, mods)
 	elseif ty == 'table' then
 		fn = function() self:type(table.unpack(item)) end
-		self:run(key, fn, mods)
+		self:run(fn, key, mods)
 	elseif mods.shift then
 		mods.shift = nil
 		self:text(key, mods)
@@ -703,7 +731,7 @@ function Cursor:edit(key, mods)
 
 	local fn = Binds.edit[key]
 	if fn then
-		self:run(key, fn, mods)
+		self:run(fn, key, mods)
 	else
 		print('unknown edit keybind: '..tostring(key))
 	end
@@ -753,7 +781,7 @@ repeat
 	-- tick(wait)
 	flush()
 	FLUSH = true
-	g.update()
+	-- g.update()
 	g.sleep(is_idle and IDLE or RECENT)
 until QUIT
 g.show('[Quit kbe.lua.]')
