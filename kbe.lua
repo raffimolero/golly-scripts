@@ -645,6 +645,7 @@ function Binds:escape(mods)
 	return mods[self.text.escape_mod]
 end
 
+-- TODO: make pasting more responsive
 function Cursor:run(fn, key, mods)
 	local reps = REPS or 1
 	local call = function() fn(mods) end
@@ -673,6 +674,7 @@ function Cursor:run(fn, key, mods)
 		local m = {} -- shallow copy the mods
 		for k,v in pairs(mods) do m[k] = v end
 		triggers[key] = m
+		return
 	end
 
 	if (category or MOVE) ~= MOVE then return end
