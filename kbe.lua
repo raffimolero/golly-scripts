@@ -33,8 +33,8 @@ Binds = {
 		delete = function() reps_pop() return CANCEL end,
 
 		-- sets the zoom level
-		a = function() zoom(1) end,
-		z = function() zoom(-1) end,
+		a = function() zoom(1) return CANCEL end,
+		z = function() zoom(-1) return CANCEL end,
 
 		-- movement
 		-- special: pans the screen
