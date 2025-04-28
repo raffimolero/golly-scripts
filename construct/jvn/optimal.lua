@@ -1,0 +1,120 @@
+-- NOTE: ACTUALLY SUBOPTIMAL
+
+local g = golly()
+local gp = require "gplus"
+
+local function split(rle, delim)
+    delim = delim or '$!'
+    local lines = {}
+    for line in string.gmatch(rle, '[^' .. delim .. ']+') do
+        table.insert(lines, line)
+    end
+    return lines
+end
+
+local BASE = [[
+x = 436, y = 18, rule = JvN29
+2.2IpA3IL2.IpA3IpA.Q$2.JLpA3KIpA.pA.2IL2IpA$2IJ.pA.IpAQ.LJ2pAIpAIpAR$
+J2ILQI2J2.LI2J.JKI$JpAIpAIpAIpA2.IpAIpA2I2J$.JK2IJ5.2IJ3IJ$.IpA.10IJ.
+LK$.J.J2KQJ8KLJ$.J3.JRpAKpAKL3KJ2pA$.J3.J2K2.J.L.pAIpAJ$.J5.IpALJ2KJ.
+JpAK$IJ4.IpAL3I.pA3IpA$J2IL.I2JIL.2RL.QR$JpAIpAIpAIpA.L.RpAK.R$IJ.2IJ
+3.L2.I2.pA$pA$J$pA6OK2OK3OK3OKOK3OK4O2K2O2K2O2K2O2K2O2K2O2K2O2K2O2K2O
+2K2O2K2O2K2O2K2O2K2O2K2O2K2O2KOK2OK3OK3OK3OK3OK3OK3OK3OK3OK3OK3OK3OK
+3OK3OK3OK3OK3OK3OK5OK5OK5OK5OK5OKO3KO3KO3KO3KO3KO3KO3KO3KO3KO5K5OK5OK
+5OK5OK5OKO3KO3KO3KO3KO3KO3KO3KO3K5OK5OK5OK5OKO3KO3KO3KO3KO3KO3K5OK5OK
+5OKO3KO3KO3KO5K5OK5OKO3KO3KO3KOK5OK5OKO3KOKO3K5OK
+]]
+
+local function inverse(t)
+    local out = {}
+    for k, v in pairs(t) do
+        out[v] = k
+    end
+    return out
+end
+
+local CELLS = { 25, 10, 12, 11, 9, 18, 20, 19, 17, 0 }
+local CELL_TO_IDX = inverse(CELLS)
+
+local function parse_recipes(s)
+    local rles = split(s)
+    if #rles < #CELLS then
+        table.insert(rles, '')
+    end
+    return rles
+end
+
+local SS = parse_recipes(
+    '3OK4O5K5OK$3OKO3KO5K5OK$3OKOKO5K5OK$3OKO2KO5K5OK$3OKO5K5OK$3OK2O5K5OK$3OK3O5K5OK$3OK2OKO5K5OK$3OKOK2O5K5OK!')
+local SE = parse_recipes(
+    'OK2OK4O5K5OKO3KO5K5OK$OK3O3KO5K5OKO3KO5K5OK$OK3OKO5K5OKO3KO5K5OK$OK3O2KO5K5OKO3KO5K5OK$OK3O5K5OKO3KO5K5OK$OK4O5K5OKO3KO5K5OK$OK2OK3O5K5OKO3KO5K5OK$OK4OKO5K5OKO3KO5K5OK$OK3OK2O5K5OKO3KO5K5OK$O3KO5K5OK!')
+local NE = parse_recipes(
+    'OK2OK4O3K5OK$OK3O3KO3K5OK$OK3OKO3K5OK$OK3O2KO3K5OK$OK3O3K5OK$OK4O3K5OK$OK2OK3O3K5OK$OK4OKO3K5OK$OK3OK2O3K5OK!')
+local NN = parse_recipes(
+    '2O2K4O3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2KO3KO3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2KOKO3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2KO2KO3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2KO3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2K2O3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2K3O3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2K2OKO3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2KOK2O3K5OKO2KOKOK5OK3OK2OK3O5K5OK$O2KOKOK5OK3OK2OK3O5K5OK!')
+
+function stringify(value)
+    local function stringifyTable(tbl)
+        local result = "{"
+        for key, val in pairs(tbl) do
+            result = result .. "[" .. stringify(key) .. "] = " .. stringify(val) .. ", "
+        end
+        return result .. "}"
+    end
+
+    if type(value) == "table" then
+        return stringifyTable(value)
+    elseif type(value) == "string" then
+        return "\"" .. value .. "\""
+    elseif type(value) == "boolean" then
+        return value and "true" or "false"
+    elseif type(value) == "number" then
+        return tostring(value)
+    elseif value == nil then
+        return "nil"
+    else
+        return "\"[unsupported value type: " .. type(value) .. "]\""
+    end
+end
+
+local EXTEND_R = 'OK2O'
+local EXTEND_B = '5OK'
+
+local rect = g.getselrect()
+local x, y, w, h = table.unpack(rect)
+
+local EXTEND = ''
+for i = -1, w do EXTEND = EXTEND .. EXTEND_R end
+EXTEND = EXTEND .. 'K3OK'
+for i = -1, w do EXTEND = EXTEND .. EXTEND_B end
+local DOWN = [[
+O3KO5K5OK
+O2KO3K5OKOKO2K5OKOK3OK2O2K3OK2O3K5OKO3KOKOK5OK3OK2O2KO5K5OKO3KOK5OK2O
+K4O3KOKOK5OK3OK2O2KO5K5OKO3KOK5OK2OK4O3KOKOK5OK3OK2O2KO5K5OKO3KOK5OK
+2OK4O3KOKOK5OK3OKO3K5OK
+]]
+
+local out = BASE
+for y_group = y, y + h - 4, 4 do
+    out = out .. EXTEND
+    for x_group = x + w, x - 1, -1 do
+        local function write(off_x, off_y, bank)
+            local cx = x_group + off_x
+            local cy = y_group + off_y
+            local cell = (cy < y + h) and g.getcell(cx, cy) or 0
+            local idx = CELL_TO_IDX[cell] or #CELLS
+            out = out .. bank[idx]
+        end
+        write(0, 3, SS)
+        write(1, 2, SE)
+        write(1, 1, NE)
+        write(0, 0, NN)
+    end
+    out = out .. DOWN
+end
+
+-- local END = 'O3KOKO3K5OK!'
+local END = 'K' .. EXTEND_R .. EXTEND_R .. 'K3OKO3KOK' .. EXTEND_B .. EXTEND_B .. EXTEND_B
+    .. NN[CELL_TO_IDX[10]] .. 'O3KOKO3K5OK' .. EXTEND_B
+out = out .. END .. '.10pA!'
+g.setclipstr(out)
