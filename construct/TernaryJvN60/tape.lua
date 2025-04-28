@@ -1,19 +1,158 @@
 local g = golly()
 local gp = require "gplus"
 
+local function err(msg)
+    g.error(msg)
+    g.exit(msg)
+end
 
-local CODE = {'.', 'J', 'V'}
+local t = -1
+local CODE = { [0] = '.', [1] = 'J', [t] = 'V' }
 
 local function wrap(str)
     return 'x = 0, y = 0, rule = TernaryJvN60\n' .. str .. '!'
 end
 
-local function gen(n)
-    local str = ''
-    for i = 1, n do
-        str = str .. CODE[math.random(3)]
+local function flatten(item, result)
+    local result = result or {}
+    if type(item) == 'table' then
+        for k, v in pairs(item) do
+            flatten(v, result)
+        end
+    else
+        result[#result + 1] = item
     end
-    return str
+    return result
 end
 
-g.setclipstr(wrap(gen(30)))
+local function pack(...)
+    local out = flatten({...})
+    while #out > 3 do
+        if table.remove(out) ~= 0 then
+            err('attempted to pack too many trits into one codon')
+        end
+    end
+    return out
+end
+
+local code = {
+    nop = { 0, 0, 0 },
+    dia = { 1, 1, 1 },
+    c = {
+        tap = 1,
+        r = { 1, 0, 0 },
+        u = { 1, 0, t },
+        l = { 1, 1, 0 },
+        d = { 1, 0, 1 },
+    },
+    d = {
+        tap = 0,
+        r = { t, 0, 0 },
+        u = { t, 0, 1 },
+        l = { t, t, 0 },
+        d = { t, 0, t },
+    },
+    g = {
+        r = { 1, 1, t },
+        u = { 1, t, t },
+        l = { 1, t, 0 },
+        d = { 1, t, 1 },
+    },
+}
+local cmd = {
+    intro = {
+        { code.c.r, code.d.u },
+        { code.c.r, code.d.u },
+        { code.c.r, code.d.r },
+        { code.c.u, code.d.r },
+        { code.c.l, code.nop },
+        { code.c.l, code.nop },
+        { code.c.l, code.nop },
+        { code.c.u, code.nop },
+        { code.c.r, code.nop },
+    },
+    r = {
+        { code.c.r, code.d.r },
+    },
+    prep = {
+        { code.c.r, code.d.d },
+    },
+}
+
+local function build(codon)
+    return {
+        { codon,             { 0, 0, t } },
+        { code.nop,          code.d.l },
+        { { 0, 0, 1 },       { t, 0, 0 } },
+        { code.c.u,          code.nop },
+        { pack(1, code.c.r), code.nop },
+        { { 1, 0, 0 },       { 0, 0, t } },
+        { code.nop,          code.d.d },
+        { code.nop,          pack(t, code.c.r) },
+    }
+end
+
+local rect = g.getselrect()
+local x, y, w, h = table.unpack(rect)
+local recipe = {
+    cmd.intro,
+    cmd.r,
+    cmd.r,
+    cmd.r,
+    build(code.dia),
+}
+
+function stringify(value)
+    local function stringifyTable(tbl)
+        local result = "{"
+        for key, val in pairs(tbl) do
+            result = result .. "[" .. stringify(key) .. "] = " .. stringify(val) .. ", "
+        end
+        return result .. "}"
+    end
+
+    if type(value) == "table" then
+        return stringifyTable(value)
+    elseif type(value) == "string" then
+        return "\"" .. value .. "\""
+    elseif type(value) == "boolean" then
+        return value and "true" or "false"
+    elseif type(value) == "number" then
+        return tostring(value)
+    elseif value == nil then
+        return "nil"
+    else
+        return "\"[unsupported value type: " .. type(value) .. "]\""
+    end
+end
+
+local len = 0
+local lines = {
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+}
+local clip = ''
+for _, group in ipairs(recipe) do
+    for _, pair in ipairs(group) do
+        len = len + 1
+        for j, codon in ipairs(pair) do
+            for i, trit in ipairs(codon) do
+                -- clip = clip .. ' ' .. trit
+                lines[(j - 1) * 3 + i] = lines[(j - 1) * 3 + i] .. CODE[-trit]
+            end
+            clip = clip .. '\n'
+        end
+    end
+end
+local out = ''
+table.insert(lines, len + 1 .. 'J')
+for _, line in ipairs(lines) do
+    out = out .. 'pJ$' .. len .. 'pGpJ$' .. len .. 'GpJ$' .. line .. '$' .. len .. 'I2$'
+end
+out = wrap(out)
+-- g.setclipstr(clip)
+g.setclipstr(out)
