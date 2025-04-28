@@ -26,7 +26,7 @@ local function flatten(item, result)
 end
 
 local function pack(...)
-    local out = flatten({...})
+    local out = flatten({ ... })
     while #out > 3 do
         if table.remove(out) ~= 0 then
             err('attempted to pack too many trits into one codon')
@@ -63,9 +63,9 @@ local cmd = {
     intro = {
         { code.c.r, code.d.u },
         { code.c.r, code.d.u },
-        { code.c.r, code.d.r },
+        { code.c.r, code.d.u },
         { code.c.u, code.d.r },
-        { code.c.l, code.nop },
+        { code.c.l, code.d.r },
         { code.c.l, code.nop },
         { code.c.l, code.nop },
         { code.c.u, code.nop },
@@ -77,6 +77,9 @@ local cmd = {
     prep = {
         { code.c.r, code.d.d },
     },
+    halt = {
+        { { 0, 0, 0 }, { 0, 0, 0 } },
+    }
 }
 
 local function build(codon)
@@ -99,7 +102,11 @@ local recipe = {
     cmd.r,
     cmd.r,
     cmd.r,
+    cmd.prep,
     build(code.dia),
+    build(code.dia),
+    build(code.dia),
+    cmd.halt,
 }
 
 function stringify(value)
@@ -149,9 +156,9 @@ for _, group in ipairs(recipe) do
     end
 end
 local out = ''
-table.insert(lines, len + 1 .. 'J')
+table.insert(lines, len - 1 .. 'J' .. 'V')
 for _, line in ipairs(lines) do
-    out = out .. 'pJ$' .. len .. 'pGpJ$' .. len .. 'GpJ$' .. line .. '$' .. len .. 'I2$'
+    out = out .. 'pJ$' .. len .. 'pGpJ$' .. len .. 'GpJ$' .. line .. '$' .. len + 1 .. 'I2$'
 end
 out = wrap(out)
 -- g.setclipstr(clip)
