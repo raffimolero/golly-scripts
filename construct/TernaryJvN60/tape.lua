@@ -1,3 +1,27 @@
+function stringify(value)
+    local function stringifyTable(tbl)
+        local result = "{"
+        for key, val in pairs(tbl) do
+            result = result .. "[" .. stringify(key) .. "] = " .. stringify(val) .. ", "
+        end
+        return result .. "}"
+    end
+
+    if type(value) == "table" then
+        return stringifyTable(value)
+    elseif type(value) == "string" then
+        return "\"" .. value .. "\""
+    elseif type(value) == "boolean" then
+        return value and "true" or "false"
+    elseif type(value) == "number" then
+        return tostring(value)
+    elseif value == nil then
+        return "nil"
+    else
+        return "\"[unsupported value type: " .. type(value) .. "]\""
+    end
+end
+
 local g = golly()
 local gp = require "gplus"
 
@@ -35,6 +59,7 @@ local function pack(...)
     return out
 end
 
+-- INDIVIDUAL CODONS
 local code = {
     nop = { 0, 0, 0 },
     dia = { 1, 1, 1 },
@@ -46,7 +71,7 @@ local code = {
         d = { 1, 0, 1 },
     },
     d = {
-        tap = 0,
+        tap = t,
         r = { t, 0, 0 },
         u = { t, 0, 1 },
         l = { t, t, 0 },
@@ -59,27 +84,21 @@ local code = {
         d = { 1, t, 1 },
     },
 }
-local cmd = {
-    intro = {
-        { code.c.r, code.d.u },
-        { code.c.r, code.d.u },
-        { code.c.r, code.d.u },
-        { code.c.u, code.d.r },
-        { code.c.l, code.d.r },
-        { code.c.l, code.nop },
-        { code.c.l, code.nop },
-        { code.c.u, code.nop },
-        { code.c.r, code.nop },
-    },
-    r = {
-        { code.c.r, code.d.r },
-    },
-    prep = {
-        { code.c.r, code.d.d },
-    },
-    halt = {
-        { { 0, 0, 0 }, { 0, 0, 0 } },
-    }
+local CODON = {
+    [0] = code.nop,
+    [7] = code.c.r,
+    [8] = code.c.u,
+    [9] = code.c.l,
+    [10] = code.c.d,
+    [19] = code.g.r,
+    [20] = code.g.u,
+    [21] = code.g.l,
+    [22] = code.g.d,
+    [31] = code.d.r,
+    [32] = code.d.u,
+    [33] = code.d.l,
+    [34] = code.d.d,
+    [43] = code.dia,
 }
 
 local function build(codon)
@@ -95,44 +114,101 @@ local function build(codon)
     }
 end
 
+-- COMMON COMMANDS
+local cmd = {
+    intro = {
+        { code.c.r, code.d.u },
+        { code.c.r, code.d.u },
+        { code.c.r, code.d.u },
+        { code.c.u, code.d.r },
+        { code.c.l, code.d.r },
+        { code.c.l, code.nop },
+        { code.c.l, code.nop },
+        { code.c.u, code.nop },
+        { code.c.r, code.nop },
+    },
+    r = {
+        { code.c.r, code.d.r },
+    },
+    l = function(cell)
+        if not cell then
+            return {
+                { code.nop,          pack(t, code.d.l) },
+                { { 0, 0, 1 },       { t, 0, 0 } },
+                { code.c.u,          code.nop },
+                { pack(1, code.c.r), code.nop },
+                { { 1, 0, 0 },       { 0, 0, t } },
+                { code.nop,          code.d.d },
+                { code.nop,          pack(t, code.c.r) },
+            }
+        else
+            return build(CODON[cell])
+        end
+    end,
+    u = function(cell)
+        return {
+            { CODON[cell],       { 0, 0, t } },
+            { code.c.u,          code.nop },
+            { pack(1, code.c.l), code.nop },
+            { { 1, 0, 0 },       { 0, 0, t } },
+            { code.c.r,       code.d.u },
+            { code.nop,       code.d.r },
+            { code.nop,       code.d.r },
+        }
+    end,
+    prep = {
+        { code.c.r, code.d.d },
+    },
+    halt = {
+        { { 0, 0, 0 }, { 0, 0, 0 } },
+    }
+}
+
+local function rep(group, count)
+    local out = {}
+    for i = 1, count do
+        for _, pair in ipairs(group) do
+            table.insert(out, pair)
+        end
+    end
+    return out
+end
+
+-- SELECTION TO RECIPE CODONS
 local rect = g.getselrect()
 local x, y, w, h = table.unpack(rect)
 local recipe = {
     cmd.intro,
+
+    rep(cmd.r, 5),
+    cmd.prep,
+    cmd.l(43),
+    cmd.l(),
+    cmd.l(43),
+    cmd.l(),
+    cmd.l(43),
+    cmd.l(43),
+    cmd.u(43),
+
+    cmd.r,
+    cmd.r,
     cmd.r,
     cmd.r,
     cmd.r,
     cmd.prep,
     build(code.dia),
+    cmd.l(),
+    build(code.dia),
+    cmd.l(),
     build(code.dia),
     build(code.dia),
+    cmd.u(43),
+
     cmd.halt,
 }
 
-function stringify(value)
-    local function stringifyTable(tbl)
-        local result = "{"
-        for key, val in pairs(tbl) do
-            result = result .. "[" .. stringify(key) .. "] = " .. stringify(val) .. ", "
-        end
-        return result .. "}"
-    end
 
-    if type(value) == "table" then
-        return stringifyTable(value)
-    elseif type(value) == "string" then
-        return "\"" .. value .. "\""
-    elseif type(value) == "boolean" then
-        return value and "true" or "false"
-    elseif type(value) == "number" then
-        return tostring(value)
-    elseif value == nil then
-        return "nil"
-    else
-        return "\"[unsupported value type: " .. type(value) .. "]\""
-    end
-end
-
+-- RECIPE CODONS TO RLE
 local len = 0
 local lines = {
     '',
@@ -161,5 +237,6 @@ for _, line in ipairs(lines) do
     out = out .. 'pJ$' .. len .. 'pGpJ$' .. len .. 'GpJ$' .. line .. '$' .. len + 1 .. 'I2$'
 end
 out = wrap(out)
--- g.setclipstr(clip)
+
+-- OUTPUT
 g.setclipstr(out)
