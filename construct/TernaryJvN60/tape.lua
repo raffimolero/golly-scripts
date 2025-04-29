@@ -1,27 +1,3 @@
-function stringify(value)
-    local function stringifyTable(tbl)
-        local result = "{"
-        for key, val in pairs(tbl) do
-            result = result .. "[" .. stringify(key) .. "] = " .. stringify(val) .. ", "
-        end
-        return result .. "}"
-    end
-
-    if type(value) == "table" then
-        return stringifyTable(value)
-    elseif type(value) == "string" then
-        return "\"" .. value .. "\""
-    elseif type(value) == "boolean" then
-        return value and "true" or "false"
-    elseif type(value) == "number" then
-        return tostring(value)
-    elseif value == nil then
-        return "nil"
-    else
-        return "\"[unsupported value type: " .. type(value) .. "]\""
-    end
-end
-
 local g = golly()
 local gp = require "gplus"
 
