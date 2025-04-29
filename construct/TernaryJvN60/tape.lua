@@ -115,6 +115,16 @@ local function build(codon)
 end
 
 -- COMMON COMMANDS
+local function rep(group, count)
+    local out = {}
+    for i = 1, count do
+        for _, pair in ipairs(group) do
+            table.insert(out, pair)
+        end
+    end
+    return out
+end
+
 local cmd = {
     intro = {
         { code.c.r, code.d.u },
@@ -165,16 +175,6 @@ local cmd = {
     }
 }
 
-local function rep(group, count)
-    local out = {}
-    for i = 1, count do
-        for _, pair in ipairs(group) do
-            table.insert(out, pair)
-        end
-    end
-    return out
-end
-
 -- SELECTION TO RECIPE CODONS
 local rect = g.getselrect()
 local x, y, w, h = table.unpack(rect)
@@ -190,6 +190,12 @@ for cy = y + h - 1, y, -1 do
     end
     table.insert(recipe, cmd.u())
 end
+-- wrap around and activate child clock
+table.insert(recipe, rep({ { code.c.u, code.nop } }, 2))
+table.insert(recipe, rep({ { code.c.l, code.nop } }, 13))
+table.insert(recipe, rep({ { code.c.d, code.nop } }, 107))
+table.insert(recipe, { { { 1, 0, 0 }, code.nop } })
+-- halt
 table.insert(recipe, cmd.halt)
 
 
