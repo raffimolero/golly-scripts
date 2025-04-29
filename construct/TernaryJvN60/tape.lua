@@ -196,7 +196,7 @@ local function build_recipe()
             end
         end
         if left == nil then
-            return 0, 0
+            return nil, nil
         end
         local right = nil
         for x = rect.x + rect.w - 1, rect.x - 1, -1 do
@@ -238,10 +238,13 @@ local function build_recipe()
     for _, y in ipairs(lanes) do
         local l, r = compute_span(rect, y)
         if l == nil or r == nil then
+            -- i don't know why this works
+            -- it still breaks when there's a bottom margin
+            pl = cx
+
             goto continue
         end
 
-        -- l = l - 1
         if l < cx then
             local retract_target = math.max(pl, l)
             push(recipe, flatten_one(rep(concat(
@@ -284,7 +287,6 @@ local function build_recipe()
             })
             pl = l
         end
-        -- l = l + 1
 
         push(recipe, flatten_one(rep(cmd.r, r - cx)))
         push(recipe, cmd.prep)
@@ -300,24 +302,16 @@ local function build_recipe()
         ::continue::
     end
 
-    -- for cy = y + h - 1, y, -1 do
-    --     push(recipe, flatten_one(rep(cmd.r, w - 1)))
-    --     push(recipe, cmd.prep)
-    --     for cx = x + w - 1, x, -1 do
-    --         push(recipe, cmd.l(g.getcell(cx, cy)))
-    --     end
-    --     push(recipe, cmd.u())
-    -- end
-    -- wrap around and activate child clock
-
-
-    -- local outro = concat(
-    --     rep({ code.c.u, code.nop }, 2),
-    --     rep({ code.c.l, code.nop }, 13),
-    --     rep({ code.c.d, code.nop }, 107),
-    --     { { { 1, 0, 0 }, code.nop } }
-    -- )
-    -- push(recipe, outro)
+    local outro = concat(
+        {
+            {code.c.l, code.nop},
+            {pack(1, code.c.l), code.nop},
+        },
+        rep({ code.c.l, code.nop }, 63),
+        rep({ code.c.d, code.nop }, 70),
+        { { { 1, 0, 0 }, code.nop } }
+    )
+    push(recipe, outro)
     push(recipe, cmd.halt)
 
     return recipe
