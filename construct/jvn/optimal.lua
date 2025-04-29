@@ -53,30 +53,6 @@ local NE = parse_recipes(
 local NN = parse_recipes(
     '2O2K4O3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2KO3KO3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2KOKO3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2KO2KO3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2KO3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2K2O3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2K3O3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2K2OKO3K5OKO2KOKOK5OK3OK2OK3O5K5OK$2O2KOK2O3K5OKO2KOKOK5OK3OK2OK3O5K5OK$O2KOKOK5OK3OK2OK3O5K5OK!')
 
-function stringify(value)
-    local function stringifyTable(tbl)
-        local result = "{"
-        for key, val in pairs(tbl) do
-            result = result .. "[" .. stringify(key) .. "] = " .. stringify(val) .. ", "
-        end
-        return result .. "}"
-    end
-
-    if type(value) == "table" then
-        return stringifyTable(value)
-    elseif type(value) == "string" then
-        return "\"" .. value .. "\""
-    elseif type(value) == "boolean" then
-        return value and "true" or "false"
-    elseif type(value) == "number" then
-        return tostring(value)
-    elseif value == nil then
-        return "nil"
-    else
-        return "\"[unsupported value type: " .. type(value) .. "]\""
-    end
-end
-
 local EXTEND_R = 'OK2O'
 local EXTEND_B = '5OK'
 

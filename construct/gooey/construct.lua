@@ -4,12 +4,15 @@
 local g = golly()
 local gp = require "gplus"
 
-function flatten(t)
+function flatten_deep(t)
     local out = {}
     local function inner(t)
         for _, v in ipairs(t) do
-            if type(v) == "table" then inner(v)
-            else table.insert(out, v) end
+            if type(v) == "table" then
+                inner(v)
+            else
+                table.insert(out, v)
+            end
         end
     end
     inner(t)
@@ -29,17 +32,17 @@ local LEN_WAIT = 20
 local LEN_MAKE = 28
 local LEN_PULL = 36
 
-local COMBO_PUSH = {LEN_PUSH}
-local COMBO_FIRE = {LEN_FIRE, LEN_WAIT, LEN_PUSH}
-local COMBO_WAIT = {LEN_WAIT}
-local COMBO_MAKE = {COMBO_FIRE, LEN_MAKE}
-local COMBO_PULL = {COMBO_FIRE, LEN_PULL}
+local COMBO_PUSH = { LEN_PUSH }
+local COMBO_FIRE = { LEN_FIRE, LEN_WAIT, LEN_PUSH }
+local COMBO_WAIT = { LEN_WAIT }
+local COMBO_MAKE = { COMBO_FIRE, LEN_MAKE }
+local COMBO_PULL = { COMBO_FIRE, LEN_PULL }
 
-local INSTRUCT_PUSH = {COMBO_PUSH}
-local INSTRUCT_FIRE = {COMBO_FIRE, COMBO_PUSH}
-local INSTRUCT_WAIT = {COMBO_WAIT}
-local INSTRUCT_MAKE = {COMBO_MAKE, COMBO_PUSH, rep(INSTRUCT_FIRE, 16)}
-local INSTRUCT_PULL = {COMBO_PULL}
+local INSTRUCT_PUSH = { COMBO_PUSH }
+local INSTRUCT_FIRE = { COMBO_FIRE, COMBO_PUSH }
+local INSTRUCT_WAIT = { COMBO_WAIT }
+local INSTRUCT_MAKE = { COMBO_MAKE, COMBO_PUSH, rep(INSTRUCT_FIRE, 16) }
+local INSTRUCT_PULL = { COMBO_PULL }
 
 -- Read input
 
@@ -93,11 +96,12 @@ $58.A$
 
 local body = "BA"
 local width = 2
-for _, len in ipairs(flatten(tape)) do
+for _, len in ipairs(flatten_deep(tape)) do
     width = width + len
     body = body .. tostring(len - 2) .. ".BA"
 end
-local rle = "x = " .. PRINTER.w + width .. ", y = " .. PRINTER.h .. ", rule = Gooey\n" .. PRINTER.top .. body .. PRINTER.bottom
+local rle = "x = " ..
+PRINTER.w + width .. ", y = " .. PRINTER.h .. ", rule = Gooey\n" .. PRINTER.top .. body .. PRINTER.bottom
 
 -- g.duplicate()
 g.setclipstr(rle)
