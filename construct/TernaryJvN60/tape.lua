@@ -146,14 +146,15 @@ local cmd = {
         end
     end,
     u = function(cell)
+        cell = cell or 0
         return {
             { CODON[cell],       { 0, 0, t } },
             { code.c.u,          code.nop },
             { pack(1, code.c.l), code.nop },
             { { 1, 0, 0 },       { 0, 0, t } },
-            { code.c.r,       code.d.u },
-            { code.nop,       code.d.r },
-            { code.nop,       code.d.r },
+            { code.c.r,          code.d.u },
+            { code.nop,          code.d.r },
+            { code.nop,          code.d.r },
         }
     end,
     prep = {
@@ -179,62 +180,48 @@ local rect = g.getselrect()
 local x, y, w, h = table.unpack(rect)
 local recipe = {
     cmd.intro,
-
-    rep(cmd.r, 5),
-    cmd.prep,
-    cmd.l(43),
-    cmd.l(),
-    cmd.l(43),
-    cmd.l(),
-    cmd.l(43),
-    cmd.l(43),
-    cmd.u(43),
-
-    cmd.r,
-    cmd.r,
-    cmd.r,
-    cmd.r,
-    cmd.r,
-    cmd.prep,
-    build(code.dia),
-    cmd.l(),
-    build(code.dia),
-    cmd.l(),
-    build(code.dia),
-    build(code.dia),
-    cmd.u(43),
-
-    cmd.halt,
 }
+
+for cy = y + h - 1, y, -1 do
+    table.insert(recipe, rep(cmd.r, w - 1))
+    table.insert(recipe, cmd.prep)
+    for cx = x + w - 1, x, -1 do
+        table.insert(recipe, cmd.l(g.getcell(cx, cy)))
+    end
+    table.insert(recipe, cmd.u())
+end
+table.insert(recipe, cmd.halt)
 
 
 -- RECIPE CODONS TO RLE
 local len = 0
 local lines = {
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
 }
-local clip = ''
 for _, group in ipairs(recipe) do
     for _, pair in ipairs(group) do
         len = len + 1
         for j, codon in ipairs(pair) do
             for i, trit in ipairs(codon) do
-                -- clip = clip .. ' ' .. trit
-                lines[(j - 1) * 3 + i] = lines[(j - 1) * 3 + i] .. CODE[-trit]
+                table.insert(lines[(j - 1) * 3 + i], CODE[-trit])
             end
-            clip = clip .. '\n'
         end
     end
 end
 local out = ''
-table.insert(lines, len - 1 .. 'J' .. 'V')
+table.insert(lines, { len - 1 .. 'J' .. 'V' })
 for _, line in ipairs(lines) do
-    out = out .. 'pJ$' .. len .. 'pGpJ$' .. len .. 'GpJ$' .. line .. '$' .. len + 1 .. 'I2$'
+    out = out
+        .. 'pJ$'
+        .. len .. 'pGpJ$'
+        .. len .. 'GpJ$'
+        .. table.concat(line) .. '$'
+        .. len + 1 .. 'I2$'
 end
 out = wrap(out)
 
