@@ -85,14 +85,12 @@ local cmd = {
     intro = {
         { code.c.r, code.d.u },
         { code.c.r, code.d.u },
-        { code.c.r, code.d.u },
-        { code.c.u, code.d.u },
-        { code.c.l, code.d.r },
-        { code.c.l, code.d.r },
+        { code.c.r, code.nop },
+        { code.c.u, code.nop },
+        { code.c.l, code.nop },
+        { code.c.l, code.nop },
         { code.c.l, code.nop },
         { code.c.u, code.nop },
-        { code.c.u, code.nop },
-        { code.c.r, code.nop },
     },
     r = {
         { code.c.r, code.d.r },
@@ -231,21 +229,20 @@ local function build_recipe()
         cmd.intro,
     }
 
+    local start = true
     local lanes = construction_lanes(rect)
     local cx = rect.x - 1
-    local cy = lanes[1]
+    local cy = lanes[1] + 1
     local pl = cx
     for _, y in ipairs(lanes) do
         local l, r = compute_span(rect, y)
         if l == nil or r == nil then
-            -- i don't know why this works
-            -- it still breaks when there's a bottom margin
-            pl = cx
-
             goto continue
         end
 
         if l < cx then
+            -- local NORMAL_RIGHT_GREEN = 'K'
+            -- push(recipe, { NORMAL_RIGHT_GREEN })
             local retract_target = math.max(pl, l)
             push(recipe, flatten_one(rep(concat(
                 cmd.su, cmd.ld
@@ -253,6 +250,8 @@ local function build_recipe()
             cx = retract_target
         end
         if l < cx then
+            -- local GATE_DOWN = 'V'
+            -- push(recipe, { GATE_DOWN })
             push(recipe, {
                 { code.c.l,          code.nop },
                 { code.c.t0,         code.d.t0 },
@@ -267,7 +266,7 @@ local function build_recipe()
             }, cx - l)))
             push(recipe, { { code.nop, code.d.u } })
             cx = l
-        elseif l >= cx and cy ~= y then
+        elseif l >= cx and not start then
             push(recipe, {
                 { code.c.u,          code.nop },
                 { pack(1, code.c.l), code.nop },
@@ -285,8 +284,9 @@ local function build_recipe()
                 { code.nop, code.d.r },
                 { code.nop, code.d.r },
             })
-            pl = l
+            pl = cx
         end
+        start = false
 
         push(recipe, flatten_one(rep(cmd.r, r - cx)))
         push(recipe, cmd.prep)
@@ -330,8 +330,16 @@ local function recipe_to_rle(recipe)
         {},
         {},
     }
+    local comments = {}
+    local comment = nil
     for _, group in ipairs(recipe) do
         for _, pair in ipairs(group) do
+            if type(pair) == 'string' then
+                comment = pair
+                pair = { code.nop, code.nop }
+            end
+            push(comments, comment or '.')
+            comment = nil
             len = len + 1
             for j, codon in ipairs(pair) do
                 for i, trit in ipairs(codon) do
@@ -350,14 +358,19 @@ local function recipe_to_rle(recipe)
             .. table.concat(line) .. '$'
             .. len + 1 .. 'I2$'
     end
-    out = wrap(out)
+    for i = 1, 5 do
+        out = out .. table.concat(comments) .. '$'
+    end
     return out
 end
 
 local function main()
     local recipe = build_recipe()
     local rle = recipe_to_rle(recipe)
-    g.setclipstr(rle)
+    -- local pat = g.parse(rle)
+    -- g.putcells(pat, 0, 0, 1, 0, 0, 1, 'copy')
+    g.setclipstr(wrap(rle))
+    -- g.paste(0, 0, 'copy')
 end
 
 main()

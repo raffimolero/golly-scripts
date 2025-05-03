@@ -11,8 +11,10 @@ function panic(msg)
     if #msg > 80 then
         msg = string.sub(msg, 1, 256) .. '...'
     end
-    g.error('PANIC: ' .. msg)
-    g.exit('PANIC: ' .. msg)
+    msg = 'PANIC: ' .. msg
+    g.setclipstr(msg)
+    g.error(msg)
+    g.exit(msg)
 end
 
 ---converts any lua value into a string
